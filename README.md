@@ -2,6 +2,8 @@
 
 A machine learning approach to forecasting a country's "standing" using 8 macro factors inspired by Ray Dalio's framework for measuring national strength.
 
+🌐 **[Live Demo & Documentation](https://mackthompson16.github.io/country-standing-forecast)**
+
 ## Overview
 
 This project implements a neural network-based forecasting system that predicts a country's composite standing score at multiple horizons (1, 5, and 10 years) using time series data of macro factors. The approach combines factor-wise convolution with temporal convolutional networks (TCN) to capture both cross-factor interactions and temporal dependencies.
@@ -46,20 +48,6 @@ streamlit run src/ui_demo.py
 ```bash
 jupyter notebook notebooks/00_quickstart.ipynb
 ```
-
-## Architecture & Results
-
-For detailed architectural justification, implementation analysis, and interactive results visualization, visit our **interactive documentation**:
-
-🌐 **[Live Demo & Documentation](https://your-username.github.io/country-standing-forecast)** *(Update with your GitHub username)*
-
-The React app provides:
-- **Architectural Deep Dive**: Why each component was chosen
-- **Interactive Results**: Explore forecasts and metrics
-- **Implementation Analysis**: Code examples and improvements
-- **What-if Scenarios**: Test different factor combinations
-- **Performance Metrics**: LOCO evaluation results
-
 ## Project Structure
 
 ```
