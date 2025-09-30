@@ -1,0 +1,66 @@
+Synthetic Country Data Summary
+========================================
+
+Generated on: 2025-09-29 20:56:30
+Countries: 16
+Years: 2000-2023
+Total observations: 384
+
+Factor Statistics:
+--------------------
+education:
+  Mean: 11.01
+  Std: 2.47
+  Min: 6.54
+  Max: 13.72
+  Missing: 0 (0.0%)
+
+innovation:
+  Mean: 70.51
+  Std: 41.16
+  Min: 7.43
+  Max: 101.57
+  Missing: 0 (0.0%)
+
+competitiveness:
+  Mean: 63.76
+  Std: 13.16
+  Min: 31.96
+  Max: 79.54
+  Missing: 0 (0.0%)
+
+military:
+  Mean: 2.16
+  Std: 0.99
+  Min: 0.90
+  Max: 4.62
+  Missing: 0 (0.0%)
+
+trade_share:
+  Mean: 63.74
+  Std: 14.76
+  Min: 25.15
+  Max: 102.04
+  Missing: 0 (0.0%)
+
+reserve_currency_proxy:
+  Mean: 4.82
+  Std: 14.39
+  Min: 0.10
+  Max: 67.39
+  Missing: 0 (0.0%)
+
+financial_center_proxy:
+  Mean: 37.47
+  Std: 19.80
+  Min: 11.57
+  Max: 86.94
+  Missing: 0 (0.0%)
+
+debt:
+  Mean: 55.74
+  Std: 9.65
+  Min: 36.60
+  Max: 83.72
+  Missing: 0 (0.0%)
+

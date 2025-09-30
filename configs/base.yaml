@@ -1,0 +1,54 @@
+# Base configuration for country standing forecast model
+
+# Model architecture
+model:
+  n_factors: 8
+  window_length: 20
+  horizons: [1, 5, 10]
+  
+  # Factor convolution parameters
+  factor_conv_channels: [16, 32]
+  factor_conv_kernels: [3, 3]
+  
+  # Temporal TCN parameters
+  tcn_channels: [32, 64]
+  tcn_dilations: [1, 2, 4, 8]
+  tcn_kernel_size: 3
+  
+  # General parameters
+  hidden_dim: 64
+  dropout: 0.1
+  activation: "relu"
+  use_attention: true
+  use_quantiles: true
+  use_factor_forecast: false
+  quantiles: [0.1, 0.5, 0.9]
+
+# Training parameters
+training:
+  learning_rate: 0.003
+  weight_decay: 0.00001
+  batch_size: 64
+  epochs: 100
+  patience: 10
+  min_delta: 0.001
+
+# Data preprocessing
+data:
+  scaler_type: "robust"  # "standard" or "robust"
+  impute_strategy: "knn"  # "knn", "mean", or "median"
+  min_years_per_country: 15
+  min_countries_per_year: 5
+  max_missing_factor_pct: 0.3
+
+# Evaluation
+evaluation:
+  target_coverage: 0.8
+  save_predictions: true
+  save_attention_weights: true
+
+# Paths
+paths:
+  data_dir: "data"
+  results_dir: "results"
+  model_dir: "models"
