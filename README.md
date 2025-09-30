@@ -1,8 +1,8 @@
-# Country Standing Forecast
+# World Order Forecast
 
-A machine learning approach to forecasting a country's "standing" using 8 macro factors inspired by Ray Dalio's framework for measuring national strength.
+A machine learning approach to forecasting a country's "standing" using 8 metrics inspired by Ray Dalio's framework for measuring national strength.
 
-🌐 **[Live Demo & Documentation](https://mackthompson16.github.io/country-standing-forecast)**
+🌐 **[Live Demo & Documentation](https://mackthompson16.github.io/World-Order-Forecast)**
 
 ## Overview
 
