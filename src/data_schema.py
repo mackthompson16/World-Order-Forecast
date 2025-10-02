@@ -144,6 +144,73 @@ class CountryData(BaseModel):
     mask_debt: bool = Field(default=False, description="Missing data flag")
 
 
+# Define industry/company factors
+COMPANY_FACTORS = {
+    "market_cap_billions": FactorDefinition(
+        name="market_cap_billions",
+        unit="billions_usd",
+        description="Total market capitalization by industry sector",
+        higher_is_better=True,
+        transform="log",
+        min_value=1.0,
+        max_value=50000.0
+    ),
+    "rd_spending_percent": FactorDefinition(
+        name="rd_spending_percent",
+        unit="pct_revenue",
+        description="R&D expenditure as % of revenue",
+        higher_is_better=True,
+        transform="level",
+        min_value=0.0,
+        max_value=30.0
+    ),
+    "employment_share_percent": FactorDefinition(
+        name="employment_share_percent",
+        unit="pct_total_employment",
+        description="Employment as % of total workforce",
+        higher_is_better=True,
+        transform="level",
+        min_value=0.1,
+        max_value=50.0
+    ),
+    "productivity_index": FactorDefinition(
+        name="productivity_index",
+        unit="index_2000_100",
+        description="Labor productivity index (base year 2000 = 100)",
+        higher_is_better=True,
+        transform="level",
+        min_value=50.0,
+        max_value=500.0
+    )
+}
+
+COMPANY_FACTOR_NAMES = list(COMPANY_FACTORS.keys())
+
+
+class CompanyData(BaseModel):
+    """Schema for company/industry-level data."""
+    
+    industry: str = Field(..., description="Industry sector name")
+    year: int = Field(..., description="Year")
+    
+    # Factor values
+    market_cap_billions: Optional[float] = None
+    rd_spending_percent: Optional[float] = None
+    employment_share_percent: Optional[float] = None
+    productivity_index: Optional[float] = None
+    
+    # Optional additional metrics
+    revenue_growth_rate: Optional[float] = None
+    patent_filings: Optional[int] = None
+    energy_consumption: Optional[float] = None
+    
+    # Data quality flags
+    mask_market_cap: bool = Field(default=False, description="Missing data flag")
+    mask_rd_spending: bool = Field(default=False, description="Missing data flag")
+    mask_employment_share: bool = Field(default=False, description="Missing data flag")
+    mask_productivity: bool = Field(default=False, description="Missing data flag")
+
+
 class ForecastTarget(BaseModel):
     """Schema for forecast targets."""
     
@@ -153,6 +220,20 @@ class ForecastTarget(BaseModel):
     
     # Composite standing score (0-100)
     standing_score: float = Field(..., ge=0.0, le=100.0)
+    
+    # Optional: individual factor forecasts
+    factor_forecasts: Optional[Dict[str, float]] = None
+
+
+class CompanyForecastTarget(BaseModel):
+    """Schema for company/industry forecast targets."""
+    
+    industry: str
+    year: int
+    horizon: int  # years ahead
+    
+    # Composite market dominance score (0-100)
+    dominance_score: float = Field(..., ge=0.0, le=100.0)
     
     # Optional: individual factor forecasts
     factor_forecasts: Optional[Dict[str, float]] = None
@@ -186,6 +267,26 @@ def get_mask_values(data: CountryData) -> np.ndarray:
     ])
 
 
+def get_company_factor_values(data: CompanyData) -> np.ndarray:
+    """Extract company factor values as numpy array."""
+    return np.array([
+        data.market_cap_billions or 0.0,
+        data.rd_spending_percent or 0.0,
+        data.employment_share_percent or 0.0,
+        data.productivity_index or 100.0  # Default to base year value
+    ])
+
+
+def get_company_mask_values(data: CompanyData) -> np.ndarray:
+    """Extract company mask values as numpy array."""
+    return np.array([
+        data.mask_market_cap,
+        data.mask_rd_spending,
+        data.mask_employment_share,
+        data.mask_productivity
+    ])
+
+
 def compute_composite_standing(factor_values: np.ndarray) -> float:
     """
     Compute composite standing score from factor values.
@@ -206,6 +307,38 @@ def compute_composite_standing(factor_values: np.ndarray) -> float:
             # Normalize to 0-100 based on min/max values
             min_val = factor_def.min_value or 0.0
             max_val = factor_def.max_value or 100.0
+            normalized[i] = min(100.0, max(0.0, 
+                (factor_values[i] - min_val) * 100.0 / (max_val - min_val)
+            ))
+    
+    return float(np.sum(weights * normalized))
+
+
+def compute_company_dominance_score(factor_values: np.ndarray) -> float:
+    """
+    Compute composite market dominance score from company factor values.
+    
+    Uses weighted average with equal weights for all factors.
+    """
+    weights = np.array([0.3, 0.2, 0.2, 0.3])  # market_cap, rd_spending, employment, productivity
+    
+    # Normalize factors to 0-100 scale
+    normalized = np.zeros_like(factor_values)
+    
+    for i, (factor_name, factor_def) in enumerate(COMPANY_FACTORS.items()):
+        min_val = factor_def.min_value or 0.0
+        max_val = factor_def.max_value or 100.0
+        
+        if factor_def.transform == "log":
+            # Apply log transformation first
+            log_val = np.log(max(factor_values[i], min_val))
+            log_min = np.log(min_val)
+            log_max = np.log(max_val)
+            normalized[i] = min(100.0, max(0.0, 
+                (log_val - log_min) * 100.0 / (log_max - log_min)
+            ))
+        else:
+            # Linear normalization
             normalized[i] = min(100.0, max(0.0, 
                 (factor_values[i] - min_val) * 100.0 / (max_val - min_val)
             ))

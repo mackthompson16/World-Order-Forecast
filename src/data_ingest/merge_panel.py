@@ -14,7 +14,13 @@ from .load_wdi import load_wdi_education, load_wdi_trade, load_wdi_debt
 from .load_wipo import load_wipo_data
 from .load_sipri import load_sipri_data
 from .load_imf_cofer import load_imf_cofer_data
-from ..data_schema import FACTOR_NAMES, CountryData, get_factor_values, get_mask_values
+from .load_company_data import load_all_company_data
+from ..data_schema import (
+    FACTOR_NAMES, COMPANY_FACTOR_NAMES, 
+    CountryData, CompanyData,
+    get_factor_values, get_mask_values,
+    get_company_factor_values, get_company_mask_values
+)
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +279,131 @@ def get_panel_summary(df: pd.DataFrame) -> Dict:
     }
     
     for factor in FACTOR_NAMES:
+        missing_pct = df[factor].isna().mean()
+        summary['missing_data'][factor] = {
+            'missing_pct': missing_pct,
+            'n_missing': df[factor].isna().sum()
+        }
+    
+    return summary
+
+
+def load_all_company_data_merged(
+    data_dir: Path,
+    industries: Optional[List[str]] = None,
+    years: Optional[List[int]] = None
+) -> pd.DataFrame:
+    """
+    Load and merge all company/industry data sources into a unified panel.
+    
+    Args:
+        data_dir: Directory containing data files
+        industries: List of industry sectors to load (None = all)
+        years: List of years to load (None = all)
+        
+    Returns:
+        DataFrame with columns: industry, year, company factors, mask_* flags
+    """
+    logger.info("Loading company data from all sources...")
+    
+    # Load company data
+    company_df = load_all_company_data(data_dir, industries, years)
+    
+    # Create mask flags for missing data
+    company_df = _create_company_mask_flags(company_df)
+    
+    logger.info(f"Created company panel with {len(company_df)} observations")
+    logger.info(f"Industries: {len(company_df['industry'].unique())}")
+    logger.info(f"Years: {company_df['year'].min()}-{company_df['year'].max()}")
+    
+    return company_df
+
+
+def _create_company_mask_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """Create mask flags for missing company data."""
+    for factor in COMPANY_FACTOR_NAMES:
+        df[f'mask_{factor.replace("_percent", "").replace("_billions", "").replace("_index", "")}'] = df[factor].isna()
+    
+    return df
+
+
+def filter_company_panel_data(
+    df: pd.DataFrame,
+    min_years_per_industry: int = 15,
+    min_industries_per_year: int = 5,
+    max_missing_factor_pct: float = 0.3
+) -> pd.DataFrame:
+    """
+    Filter company panel data to ensure sufficient coverage.
+    
+    Args:
+        df: Company panel DataFrame
+        min_years_per_industry: Minimum years of data per industry
+        min_industries_per_year: Minimum industries per year
+        max_missing_factor_pct: Maximum % of missing data per factor
+        
+    Returns:
+        Filtered DataFrame
+    """
+    logger.info("Filtering company panel data...")
+    
+    # Filter industries with sufficient years
+    industry_years = df.groupby('industry')['year'].count()
+    valid_industries = industry_years[industry_years >= min_years_per_industry].index
+    df = df[df['industry'].isin(valid_industries)]
+    
+    # Filter years with sufficient industries
+    year_industries = df.groupby('year')['industry'].nunique()
+    valid_years = year_industries[year_industries >= min_industries_per_year].index
+    df = df[df['year'].isin(valid_years)]
+    
+    # Check missing data by factor
+    for factor in COMPANY_FACTOR_NAMES:
+        missing_pct = df[factor].isna().mean()
+        if missing_pct > max_missing_factor_pct:
+            logger.warning(f"Company factor {factor} has {missing_pct:.1%} missing data")
+    
+    logger.info(f"Filtered company panel: {len(df)} observations")
+    logger.info(f"Industries: {len(df['industry'].unique())}")
+    logger.info(f"Years: {df['year'].min()}-{df['year'].max()}")
+    
+    return df
+
+
+def create_company_data_objects(df: pd.DataFrame) -> List[CompanyData]:
+    """Convert DataFrame to list of CompanyData objects."""
+    company_data = []
+    
+    for _, row in df.iterrows():
+        data = CompanyData(
+            industry=row['industry'],
+            year=row['year'],
+            market_cap_billions=row.get('market_cap_billions'),
+            rd_spending_percent=row.get('rd_spending_percent'),
+            employment_share_percent=row.get('employment_share_percent'),
+            productivity_index=row.get('productivity_index'),
+            mask_market_cap=row.get('mask_market_cap', False),
+            mask_rd_spending=row.get('mask_rd_spending', False),
+            mask_employment_share=row.get('mask_employment_share', False),
+            mask_productivity=row.get('mask_productivity', False)
+        )
+        company_data.append(data)
+    
+    return company_data
+
+
+def get_company_panel_summary(df: pd.DataFrame) -> Dict:
+    """Get summary statistics for the company panel data."""
+    summary = {
+        'n_observations': len(df),
+        'n_industries': df['industry'].nunique(),
+        'n_years': df['year'].nunique(),
+        'year_range': (df['year'].min(), df['year'].max()),
+        'industries': sorted(df['industry'].unique().tolist()),
+        'missing_data': {}
+    }
+    
+    for factor in COMPANY_FACTOR_NAMES:
         missing_pct = df[factor].isna().mean()
         summary['missing_data'][factor] = {
             'missing_pct': missing_pct,
