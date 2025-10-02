@@ -1,71 +1,32 @@
-# World Order Forecast
+# Deep Leaning to predict the future
 
-A machine learning approach to forecasting a country's "standing" using 8 metrics inspired by Ray Dalio's framework for measuring national strength.
+This project utilizes public datasets and machine learning libraries to train a model on socio-economic trends in hopes of predicting the future (10 year projection).
+
+
+### Research question: Are Empires and Companies one in the same?
+
+I split my data in two: empires and companies. From here, I trained three models:
+
+1) World Order Forecast (WOF)
+2) Market Share Forecast (MSF)
+3) MSF Diluted from WOF
+
+To develop an accuracy metric, I left one country and one industry out, and averaged a walk forward loss function. I must admit this metric is biased because I cherrypick a stable industry/country, and have already trained the model on wordly trends from that time period (it already understands historical shifts and events).
+## Background
+
+I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
+
+His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
+
+## Data
+
+Public Data for Empires 
+Metric | Source | Range |
+Global Debt | IMF | 
+Military Strength | SIPRI|
+GDP | IMF |
+Reserve Currency | IMF |
+Education | WIPO |
 
 🌐 **[Live Demo & Documentation](https://mackthompson16.github.io/World-Order-Forecast)**
 
-## Overview
-
-This project implements a neural network-based forecasting system that predicts a country's composite standing score at multiple horizons (1, 5, and 10 years) using time series data of macro factors. The approach combines factor-wise convolution with temporal convolutional networks (TCN) to capture both cross-factor interactions and temporal dependencies.
-
-## Key Features
-
-- **8 Macro Factors**: Education, Innovation, Competitiveness, Military, Trade Share, Reserve Currency, Financial Center, and Debt
-- **Neural Network Architecture**: Factor convolution + Temporal TCN with attention mechanism
-- **Multiple Forecast Horizons**: 1, 5, and 10-year predictions
-- **Uncertainty Quantification**: Quantile regression for confidence intervals
-- **Robust Evaluation**: Leave-One-Country-Out (LOCO) cross-validation
-- **Interactive UI**: Streamlit web application for exploration and what-if analysis
-- **Synthetic Data**: Plausible synthetic data generator for immediate testing
-
-## Project Structure
-
-```
-country_standing_forecast/
-├── src/                    # Core Python modules
-├── configs/               # Model configurations
-├── notebooks/             # Jupyter tutorials
-├── tests/                 # Unit tests
-├── data/                  # Data directory
-├── results/               # Results and models
-├── docs/                  # React documentation app
-├── make_synth_data.py     # Synthetic data generator
-└── requirements.txt       # Python dependencies
-```
-
-## Data Schema
-
-The system uses 8 macro factors to measure country standing:
-
-| Factor | Description | Unit | Higher is Better | Source |
-|--------|-------------|------|------------------|---------|
-| Education | Average years of schooling (population 25+) | years | Yes | World Bank WDI |
-| Innovation | Patent applications per million population | patents/million | Yes | WIPO |
-| Competitiveness | Global Competitiveness Index | index (0-100) | Yes | WEF |
-| Military | Military expenditure as % of GDP | % of GDP | Yes | SIPRI |
-| Trade Share | Trade (exports + imports) as % of GDP | % of GDP | Yes | World Bank WDI |
-| Reserve Currency | Currency share in global foreign exchange reserves | % of global reserves | Yes | IMF COFER |
-| Financial Center | Financial center development index | index (0-100) | Yes | GFCI |
-| Debt | Government debt as % of GDP | % of GDP | No (inverted) | World Bank WDI |
-
-## Model Architecture
-
-- **Input**: `[batch_size, 20, 8]` (20 years × 8 factors)
-- **Factor Convolution**: 1D conv across factors (kernel 2-3) → captures factor interactions
-- **Temporal TCN**: Dilated convolutions [1,2,4,8] → captures temporal dependencies
-- **Attention**: Temporal attention for focusing on critical periods
-- **Output**: `[batch_size, 3]` (1, 5, 10-year forecasts) + uncertainty quantiles
-- **Parameters**: ~200k (lightweight design)
-
-## Training & Evaluation
-
-- **Rolling-Origin Walk-Forward**: Time-based validation with no future leakage
-- **Leave-One-Country-Out**: Tests generalization across countries
-- **Early Stopping**: Prevents overfitting on validation MASE
-- **Metrics**: MAE, RMSE, MASE, Spearman correlation, interval coverage
-
-## Acknowledgments
-
-- Inspired by Ray Dalio's framework for measuring country strength
-- Built with PyTorch, Streamlit, and scikit-learn
-- Uses synthetic data for immediate testing and demonstration
