@@ -333,35 +333,35 @@ def get_company_mask_values(data: CompanyData) -> np.ndarray:
     ])
 
 
-def compute_composite_standing(factor_values: np.ndarray, apply_corruption_penalty: bool = True, apply_geography_boost: bool = True) -> float:
+def compute_composite_standing(factor_values: np.ndarray) -> float:
     """
-    Compute composite standing score from factor values.
+    Compute base composite standing score from factor values (without corruption/geography effects).
     
     Uses weighted average with factor-specific weights and handles
     the debt factor (which is inverted - lower is better).
-    
-    Args:
-        factor_values: Array of factor values (including corruption_index and geography_advantage)
-        apply_corruption_penalty: Whether to apply corruption-based data trust penalty
-        apply_geography_boost: Whether to apply geography-based optimistic multiplier
     """
-    # Updated weights for 10 factors
-    weights = np.array([0.12, 0.12, 0.12, 0.08, 0.12, 0.08, 0.08, 0.08, 0.10, 0.10])
+    # Weights for 8 core factors (excluding corruption_index and geography_advantage)
+    weights = np.array([0.15, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10, 0.10])
+    
+    # Use only the first 8 factors for base score calculation
+    core_factors = factor_values[:8]
     
     # Normalize factors to 0-100 scale
-    normalized = np.zeros_like(factor_values)
+    normalized = np.zeros_like(core_factors)
     
-    for i, (factor_name, factor_def) in enumerate(FACTORS.items()):
+    core_factor_names = list(FACTORS.keys())[:8]  # First 8 factors
+    
+    for i, (factor_name, factor_def) in enumerate(zip(core_factor_names, [FACTORS[name] for name in core_factor_names])):
         if factor_name == "debt":
             # Invert debt (lower is better)
-            normalized[i] = 100.0 - min(100.0, factor_values[i] * 100.0 / 300.0)
+            normalized[i] = 100.0 - min(100.0, core_factors[i] * 100.0 / 300.0)
         else:
             # Normalize to 0-100 based on min/max values
             min_val = factor_def.min_value or 0.0
             max_val = factor_def.max_value or 100.0
             if max_val > min_val:
                 normalized[i] = min(100.0, max(0.0, 
-                    (factor_values[i] - min_val) * 100.0 / (max_val - min_val)
+                    (core_factors[i] - min_val) * 100.0 / (max_val - min_val)
                 ))
             else:
                 normalized[i] = 50.0  # Default neutral value
@@ -369,18 +369,85 @@ def compute_composite_standing(factor_values: np.ndarray, apply_corruption_penal
     # Calculate base composite score
     base_score = float(np.sum(weights * normalized))
     
-    # Apply corruption penalty (data trustworthiness)
-    if apply_corruption_penalty and len(factor_values) > 8:
-        corruption_index = factor_values[8]  # corruption_index is 9th factor (index 8)
-        corruption_penalty = corruption_index  # Higher corruption = lower trust = lower score
-        base_score *= corruption_penalty
-    
-    # Apply geography boost (optimistic curves for better geography)
-    if apply_geography_boost and len(factor_values) > 9:
-        geography_advantage = factor_values[9]  # geography_advantage is 10th factor (index 9)
-        base_score *= geography_advantage
-    
     return float(np.clip(base_score, 0.0, 100.0))
+
+
+def compute_data_confidence(factor_values: np.ndarray) -> float:
+    """
+    Compute data confidence/trust score based on corruption levels.
+    
+    This affects learning rate and gradient trust, not the final score directly.
+    
+    Args:
+        factor_values: Array including corruption_index at index 8
+        
+    Returns:
+        Confidence score (0.0 to 1.0) - higher means more trustworthy data
+    """
+    if len(factor_values) > 8:
+        corruption_index = factor_values[8]  # corruption_index is 9th factor (index 8)
+        return float(corruption_index)  # Direct mapping: corruption_index = confidence
+    else:
+        return 0.5  # Default moderate confidence
+
+
+def compute_geography_growth_multiplier(factor_values: np.ndarray) -> float:
+    """
+    Compute geography-based growth multiplier for derivatives/trends.
+    
+    This affects the rate of change over time, not the current score.
+    
+    Args:
+        factor_values: Array including geography_advantage at index 9
+        
+    Returns:
+        Growth multiplier (0.5 to 1.5) - higher means more optimistic growth trends
+    """
+    if len(factor_values) > 9:
+        geography_advantage = factor_values[9]  # geography_advantage is 10th factor (index 9)
+        return float(geography_advantage)  # Direct mapping: geography_advantage = growth multiplier
+    else:
+        return 1.0  # Default neutral growth
+
+
+def compute_learning_rate_adjustment(data_confidence: float, base_learning_rate: float = 0.01) -> float:
+    """
+    Adjust learning rate based on data confidence.
+    
+    Higher confidence = higher learning rate (trust gradients more)
+    Lower confidence = lower learning rate (be more conservative)
+    
+    Args:
+        data_confidence: Confidence score (0.0 to 1.0)
+        base_learning_rate: Base learning rate
+        
+    Returns:
+        Adjusted learning rate
+    """
+    # Scale learning rate by confidence
+    # High confidence (0.95) -> 1.0x learning rate
+    # Low confidence (0.25) -> 0.25x learning rate
+    adjusted_lr = base_learning_rate * data_confidence
+    return float(np.clip(adjusted_lr, base_learning_rate * 0.1, base_learning_rate * 1.5))
+
+
+def compute_trend_adjustment(geography_multiplier: float, base_trend: float) -> float:
+    """
+    Adjust growth trend based on geography advantage.
+    
+    Higher geography multiplier = more optimistic trend (higher derivative)
+    Lower geography multiplier = more pessimistic trend (lower derivative)
+    
+    Args:
+        geography_multiplier: Geography growth multiplier (0.5 to 1.5)
+        base_trend: Base trend/growth rate
+        
+    Returns:
+        Adjusted trend/growth rate
+    """
+    # Multiply trend by geography advantage
+    adjusted_trend = base_trend * geography_multiplier
+    return float(adjusted_trend)
 
 
 def get_country_corruption_level(country_code: str) -> str:

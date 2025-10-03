@@ -86,24 +86,24 @@ The corruption constant models the **reliability and trustworthiness** of econom
 - **High** (0.50): India, Brazil, China, Mexico, Turkey, Russia, Indonesia, Thailand, Saudi Arabia
 - **Very High** (0.25): Venezuela, Myanmar, North Korea, Iran, Afghanistan, Syria, Yemen
 
-**Effect on Predictions**:
+**Effect on Learning & Gradients**:
 ```
-Final Score = Base Composite Score × Corruption Trust Score
+Learning Rate = Base Learning Rate × Corruption Trust Score
 ```
 
-**Confidence Impact**:
-- **High corruption** → Lower confidence in predictions due to unreliable underlying data
-- **Low corruption** → Higher confidence due to transparent, verifiable data
-- **Data manipulation detection** → Model can identify countries with suspiciously smooth or unrealistic patterns
+**Gradient Trust Impact**:
+- **High corruption** → Lower learning rate (be more conservative with updates)
+- **Low corruption** → Higher learning rate (trust gradients more, learn faster)
+- **Data manipulation detection** → Model adjusts learning rate based on data reliability
 
 #### Real-World Example
 
-| Country | Corruption Level | Trust Score | Impact on Score |
-|---------|------------------|-------------|-----------------|
-| Denmark | Very Low | 0.95 | Minimal penalty (-5%) |
-| USA | Moderate | 0.70 | Moderate penalty (-30%) |
-| China | High | 0.50 | Significant penalty (-50%) |
-| Venezuela | Very High | 0.25 | Severe penalty (-75%) |
+| Country | Corruption Level | Trust Score | Learning Rate Impact |
+|---------|------------------|-------------|---------------------|
+| Denmark | Very Low | 0.95 | 95% of base learning rate |
+| USA | Moderate | 0.70 | 70% of base learning rate |
+| China | High | 0.50 | 50% of base learning rate |
+| Venezuela | Very High | 0.25 | 25% of base learning rate |
 
 ### Geography Constant: Optimistic Curves
 
@@ -127,36 +127,67 @@ Geography Multiplier = ∏(Individual Geography Effects)
 Final Multiplier = min(1.5, max(0.5, Geography Multiplier))
 ```
 
+**Effect on Growth Trends**:
+```
+Adjusted Trend = Base Trend × Geography Multiplier
+```
+
+**Derivative Impact**:
+- **Higher geography multiplier** → More optimistic growth trends (higher derivatives)
+- **Lower geography multiplier** → More pessimistic growth trends (lower derivatives)
+- **Long-term effects** → Geography affects the rate of change over time, not current standing
+
 #### Real-World Examples
 
-| Country | Geography Advantages | Calculation | Final Multiplier |
-|---------|---------------------|-------------|------------------|
-| USA | Coastal + Resource + Strategic | 1.10 × 1.08 × 1.05 | 1.25x |
-| UK | Island + Coastal + Strategic | 1.15 × 1.10 × 1.05 | 1.33x |
-| Switzerland | Mountain + Strategic | 0.92 × 1.05 | 0.97x |
-| Saudi Arabia | Desert + Resource | 0.88 × 1.08 | 0.95x |
+| Country | Geography Advantages | Calculation | Growth Multiplier | Trend Impact |
+|---------|---------------------|-------------|------------------|--------------|
+| USA | Coastal + Resource + Strategic | 1.10 × 1.08 × 1.05 | 1.25x | 25% faster growth |
+| UK | Island + Coastal + Strategic | 1.15 × 1.10 × 1.05 | 1.33x | 33% faster growth |
+| Switzerland | Mountain + Strategic | 0.92 × 1.05 | 0.97x | 3% slower growth |
+| Saudi Arabia | Desert + Resource | 0.88 × 1.08 | 0.95x | 5% slower growth |
 
-### Combined Effects on Predictions
+### Combined Effects on Model Training & Predictions
 
-#### Final Score Calculation
+#### Model Training Approach
 
 ```
-Final Standing Score = Base Composite Score × Corruption Trust Score × Geography Multiplier
+Learning Rate = Base Learning Rate × Corruption Trust Score
+Growth Trend = Base Trend × Geography Multiplier
 ```
 
-#### Prediction Confidence Levels
+#### Training Strategy by Data Quality
 
-**High Confidence** (Corruption < 0.7, Geography > 1.0):
-- Transparent data + geographic advantages
-- Examples: Denmark, Norway, Singapore
+**High Data Confidence** (Corruption > 0.8):
+- **Learning Rate**: 80-95% of base rate (trust gradients)
+- **Training**: Aggressive learning from these countries
+- **Examples**: Denmark, Norway, Singapore
 
-**Medium Confidence** (Corruption 0.5-0.7, Geography 0.9-1.1):
-- Moderate data reliability + neutral geography  
-- Examples: USA, France, Italy
+**Medium Data Confidence** (Corruption 0.5-0.8):
+- **Learning Rate**: 50-80% of base rate (moderate trust)
+- **Training**: Balanced learning with some caution
+- **Examples**: USA, France, Italy
 
-**Low Confidence** (Corruption > 0.7 OR Geography < 0.9):
-- Unreliable data OR geographic disadvantages
-- Examples: China, Russia, Venezuela
+**Low Data Confidence** (Corruption < 0.5):
+- **Learning Rate**: 10-50% of base rate (very conservative)
+- **Training**: Minimal learning, mostly for pattern recognition
+- **Examples**: China, Russia, Venezuela
+
+#### Prediction Strategy by Geography
+
+**High Geography Advantage** (Multiplier > 1.1):
+- **Trend Adjustment**: More optimistic growth trajectories
+- **Forecasting**: Higher likelihood of continued thriving
+- **Examples**: USA, UK, Japan
+
+**Neutral Geography** (Multiplier 0.9-1.1):
+- **Trend Adjustment**: Standard growth trajectories
+- **Forecasting**: Baseline expectations
+- **Examples**: Germany, France, Italy
+
+**Low Geography Advantage** (Multiplier < 0.9):
+- **Trend Adjustment**: More pessimistic growth trajectories
+- **Forecasting**: Lower likelihood of continued thriving
+- **Examples**: Switzerland, Austria, landlocked countries
 
 #### Model Training Implications
 
@@ -197,8 +228,8 @@ Final Standing Score = Base Composite Score × Corruption Trust Score × Geograp
 ### 🎯 Usage
 
 ```bash
-# Analyze corruption and geography constant effects
-python demo_corruption_geography.py
+# Analyze corrected corruption and geography effects (learning rates & trends)
+python demo_learning_rate_trends.py
 
 # Analyze LOCO candidates to find optimal validation entities
 python analyze_loco_candidates.py
