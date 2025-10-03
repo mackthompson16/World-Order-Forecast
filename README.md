@@ -71,13 +71,118 @@ For model validation using the leave-one-out approach, we need to avoid **biased
 - **Representative** of typical economic behavior
 - **Sufficient data** (15+ years of observations)
 
+## Corruption & Geography Constants
+
+### Corruption Constant: Data Trustworthiness
+
+The corruption constant models the **reliability and trustworthiness** of economic data based on institutional corruption levels. This addresses the critical issue that countries with high corruption often manipulate or restrict access to economic statistics.
+
+#### Calculation Method
+
+**Corruption Levels** (based on Transparency International CPI):
+- **Very Low** (0.95): Denmark, Finland, New Zealand, Norway, Sweden, Switzerland, Singapore, Netherlands
+- **Low** (0.85): Australia, Canada, Germany, UK, Austria, Belgium, Ireland, Japan, Estonia, Iceland  
+- **Moderate** (0.70): USA, France, Italy, Spain, South Korea, Portugal, Poland, Czech Republic
+- **High** (0.50): India, Brazil, China, Mexico, Turkey, Russia, Indonesia, Thailand, Saudi Arabia
+- **Very High** (0.25): Venezuela, Myanmar, North Korea, Iran, Afghanistan, Syria, Yemen
+
+**Effect on Predictions**:
+```
+Final Score = Base Composite Score × Corruption Trust Score
+```
+
+**Confidence Impact**:
+- **High corruption** → Lower confidence in predictions due to unreliable underlying data
+- **Low corruption** → Higher confidence due to transparent, verifiable data
+- **Data manipulation detection** → Model can identify countries with suspiciously smooth or unrealistic patterns
+
+#### Real-World Example
+
+| Country | Corruption Level | Trust Score | Impact on Score |
+|---------|------------------|-------------|-----------------|
+| Denmark | Very Low | 0.95 | Minimal penalty (-5%) |
+| USA | Moderate | 0.70 | Moderate penalty (-30%) |
+| China | High | 0.50 | Significant penalty (-50%) |
+| Venezuela | Very High | 0.25 | Severe penalty (-75%) |
+
+### Geography Constant: Optimistic Curves
+
+The geography constant creates **optimistic curves** for countries with natural geographic advantages, reflecting how location, resources, and terrain influence long-term economic potential.
+
+#### Calculation Method
+
+**Geography Advantages** (multiplicative effects):
+- **Island Advantage** (1.15x): Natural defense, trade advantages (UK, Japan, Australia, New Zealand)
+- **Coastal Access** (1.10x): Maritime trade, resource access (USA, France, Italy, Spain)
+- **Strategic Location** (1.05x): Geographic strategic importance (Germany, Turkey, Egypt)
+- **Resource Rich** (1.08x): Natural resource abundance (USA, Russia, Saudi Arabia, Brazil)
+- **Landlocked** (0.90x): Limited trade routes, dependency (Switzerland, Austria, Czech Republic)
+- **Arctic Challenges** (0.85x): Harsh climate, infrastructure costs (Norway, Sweden, Finland, Canada)
+- **Desert Limitations** (0.88x): Water scarcity, agricultural challenges (Saudi Arabia, UAE, Egypt)
+- **Mountain Barriers** (0.92x): Transportation difficulties (Switzerland, Austria, Afghanistan)
+
+**Combined Geography Score**:
+```
+Geography Multiplier = ∏(Individual Geography Effects)
+Final Multiplier = min(1.5, max(0.5, Geography Multiplier))
+```
+
+#### Real-World Examples
+
+| Country | Geography Advantages | Calculation | Final Multiplier |
+|---------|---------------------|-------------|------------------|
+| USA | Coastal + Resource + Strategic | 1.10 × 1.08 × 1.05 | 1.25x |
+| UK | Island + Coastal + Strategic | 1.15 × 1.10 × 1.05 | 1.33x |
+| Switzerland | Mountain + Strategic | 0.92 × 1.05 | 0.97x |
+| Saudi Arabia | Desert + Resource | 0.88 × 1.08 | 0.95x |
+
+### Combined Effects on Predictions
+
+#### Final Score Calculation
+
+```
+Final Standing Score = Base Composite Score × Corruption Trust Score × Geography Multiplier
+```
+
+#### Prediction Confidence Levels
+
+**High Confidence** (Corruption < 0.7, Geography > 1.0):
+- Transparent data + geographic advantages
+- Examples: Denmark, Norway, Singapore
+
+**Medium Confidence** (Corruption 0.5-0.7, Geography 0.9-1.1):
+- Moderate data reliability + neutral geography  
+- Examples: USA, France, Italy
+
+**Low Confidence** (Corruption > 0.7 OR Geography < 0.9):
+- Unreliable data OR geographic disadvantages
+- Examples: China, Russia, Venezuela
+
+#### Model Training Implications
+
+**Democratic Countries First**: Train initial models on high-confidence countries (low corruption, good geography)
+**Gradual Expansion**: Gradually incorporate lower-confidence countries with uncertainty quantification
+**Bias Correction**: Use corruption/geography constants to adjust for systematic data quality differences
+
+#### Validation Strategy Enhancement
+
+**LOCO Selection**: Consider corruption and geography when selecting leave-one-out candidates
+- Avoid very stable countries (Switzerland) - too predictable
+- Avoid very unstable countries (Venezuela) - too unreliable  
+- Select countries with **moderate corruption** (0.5-0.7) and **average geography** (0.9-1.1)
+
+**Confidence Intervals**: Wider prediction intervals for high-corruption countries
+**Sensitivity Analysis**: Test model robustness across different corruption/geography scenarios
+
 ## Implementation Status
 
 ### ✅ Completed Features
 
 - **Dual Data Framework**: Separate pipelines for Empire (country) and Company (industry) data
 - **Democratic Data Focus**: Initial implementation prioritizes transparent, democratic countries
-- **Comprehensive Data Schema**: 8 country factors + 4 industry factors with proper validation
+- **Comprehensive Data Schema**: 10 country factors + 4 industry factors with proper validation
+- **Corruption Constants**: Data trustworthiness modeling based on corruption levels
+- **Geography Constants**: Optimistic curves based on geographic advantages/disadvantages
 - **Synthetic Data Generation**: Development-ready synthetic data for all sources
 - **LOCO Analysis Tool**: Automated identification of optimal validation candidates
 - **Data Quality Framework**: Missing data handling, masking, and quality checks
@@ -92,6 +197,9 @@ For model validation using the leave-one-out approach, we need to avoid **biased
 ### 🎯 Usage
 
 ```bash
+# Analyze corruption and geography constant effects
+python demo_corruption_geography.py
+
 # Analyze LOCO candidates to find optimal validation entities
 python analyze_loco_candidates.py
 
@@ -99,6 +207,8 @@ python analyze_loco_candidates.py
 python demo_dual_analysis.py
 
 # Generated files:
+# - results/corruption_geography_analysis.csv
+# - results/corruption_geography_effects.png
 # - results/country_volatility_analysis.csv
 # - results/industry_volatility_analysis.csv
 # - results/country_loco_candidates.csv

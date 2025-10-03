@@ -25,6 +25,26 @@ class FactorDefinition(BaseModel):
     max_value: Optional[float] = Field(None, description="Maximum plausible value")
 
 
+# Define corruption and geography constants
+CORRUPTION_CONSTANTS = {
+    "very_low": {"score": 0.95, "description": "Highly transparent institutions"},
+    "low": {"score": 0.85, "description": "Good governance, minor issues"},
+    "moderate": {"score": 0.70, "description": "Some corruption, data reliability concerns"},
+    "high": {"score": 0.50, "description": "Significant corruption, unreliable data"},
+    "very_high": {"score": 0.25, "description": "Severe corruption, highly unreliable data"}
+}
+
+GEOGRAPHY_CONSTANTS = {
+    "island_advantage": {"multiplier": 1.15, "description": "Natural defense, trade advantages"},
+    "coastal_access": {"multiplier": 1.10, "description": "Maritime trade, resource access"},
+    "strategic_location": {"multiplier": 1.05, "description": "Geographic strategic importance"},
+    "landlocked": {"multiplier": 0.90, "description": "Limited trade routes, dependency"},
+    "resource_rich": {"multiplier": 1.08, "description": "Natural resource abundance"},
+    "arctic_challenges": {"multiplier": 0.85, "description": "Harsh climate, infrastructure costs"},
+    "desert_limitations": {"multiplier": 0.88, "description": "Water scarcity, agricultural challenges"},
+    "mountain_barriers": {"multiplier": 0.92, "description": "Transportation difficulties"}
+}
+
 # Define the 8 core macro factors
 FACTORS = {
     "education": FactorDefinition(
@@ -98,6 +118,24 @@ FACTORS = {
         transform="level",
         min_value=0.0,
         max_value=300.0
+    ),
+    "corruption_index": FactorDefinition(
+        name="corruption_index",
+        unit="trust_score",
+        description="Data trustworthiness based on corruption levels (0-1 scale)",
+        higher_is_better=True,
+        transform="level",
+        min_value=0.0,
+        max_value=1.0
+    ),
+    "geography_advantage": FactorDefinition(
+        name="geography_advantage",
+        unit="multiplier",
+        description="Geographic advantage multiplier for optimistic curves",
+        higher_is_better=True,
+        transform="level",
+        min_value=0.5,
+        max_value=1.5
     )
 }
 
@@ -128,6 +166,8 @@ class CountryData(BaseModel):
     reserve_currency_proxy: Optional[float] = None
     financial_center_proxy: Optional[float] = None
     debt: Optional[float] = None
+    corruption_index: Optional[float] = None
+    geography_advantage: Optional[float] = None
     
     # Optional exogenous variables
     gdp_per_capita: Optional[float] = None
@@ -142,6 +182,8 @@ class CountryData(BaseModel):
     mask_reserve_currency_proxy: bool = Field(default=False, description="Missing data flag")
     mask_financial_center_proxy: bool = Field(default=False, description="Missing data flag")
     mask_debt: bool = Field(default=False, description="Missing data flag")
+    mask_corruption_index: bool = Field(default=False, description="Missing data flag")
+    mask_geography_advantage: bool = Field(default=False, description="Missing data flag")
 
 
 # Define industry/company factors
@@ -249,7 +291,9 @@ def get_factor_values(data: CountryData) -> np.ndarray:
         data.trade_share or 0.0,
         data.reserve_currency_proxy or 0.0,
         data.financial_center_proxy or 0.0,
-        data.debt or 0.0
+        data.debt or 0.0,
+        data.corruption_index or 0.5,  # Default to moderate corruption
+        data.geography_advantage or 1.0  # Default to neutral geography
     ])
 
 
@@ -263,7 +307,9 @@ def get_mask_values(data: CountryData) -> np.ndarray:
         data.mask_trade_share,
         data.mask_reserve_currency_proxy,
         data.mask_financial_center_proxy,
-        data.mask_debt
+        data.mask_debt,
+        data.mask_corruption_index,
+        data.mask_geography_advantage
     ])
 
 
@@ -287,14 +333,20 @@ def get_company_mask_values(data: CompanyData) -> np.ndarray:
     ])
 
 
-def compute_composite_standing(factor_values: np.ndarray) -> float:
+def compute_composite_standing(factor_values: np.ndarray, apply_corruption_penalty: bool = True, apply_geography_boost: bool = True) -> float:
     """
     Compute composite standing score from factor values.
     
     Uses weighted average with factor-specific weights and handles
     the debt factor (which is inverted - lower is better).
+    
+    Args:
+        factor_values: Array of factor values (including corruption_index and geography_advantage)
+        apply_corruption_penalty: Whether to apply corruption-based data trust penalty
+        apply_geography_boost: Whether to apply geography-based optimistic multiplier
     """
-    weights = np.array([0.15, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10, 0.10])
+    # Updated weights for 10 factors
+    weights = np.array([0.12, 0.12, 0.12, 0.08, 0.12, 0.08, 0.08, 0.08, 0.10, 0.10])
     
     # Normalize factors to 0-100 scale
     normalized = np.zeros_like(factor_values)
@@ -307,11 +359,165 @@ def compute_composite_standing(factor_values: np.ndarray) -> float:
             # Normalize to 0-100 based on min/max values
             min_val = factor_def.min_value or 0.0
             max_val = factor_def.max_value or 100.0
-            normalized[i] = min(100.0, max(0.0, 
-                (factor_values[i] - min_val) * 100.0 / (max_val - min_val)
-            ))
+            if max_val > min_val:
+                normalized[i] = min(100.0, max(0.0, 
+                    (factor_values[i] - min_val) * 100.0 / (max_val - min_val)
+                ))
+            else:
+                normalized[i] = 50.0  # Default neutral value
     
-    return float(np.sum(weights * normalized))
+    # Calculate base composite score
+    base_score = float(np.sum(weights * normalized))
+    
+    # Apply corruption penalty (data trustworthiness)
+    if apply_corruption_penalty and len(factor_values) > 8:
+        corruption_index = factor_values[8]  # corruption_index is 9th factor (index 8)
+        corruption_penalty = corruption_index  # Higher corruption = lower trust = lower score
+        base_score *= corruption_penalty
+    
+    # Apply geography boost (optimistic curves for better geography)
+    if apply_geography_boost and len(factor_values) > 9:
+        geography_advantage = factor_values[9]  # geography_advantage is 10th factor (index 9)
+        base_score *= geography_advantage
+    
+    return float(np.clip(base_score, 0.0, 100.0))
+
+
+def get_country_corruption_level(country_code: str) -> str:
+    """
+    Get corruption level for a country based on Transparency International data and governance indicators.
+    
+    Returns one of: "very_low", "low", "moderate", "high", "very_high"
+    """
+    # Based on Transparency International Corruption Perceptions Index and governance data
+    corruption_levels = {
+        # Very low corruption (CPI > 80)
+        "DNK": "very_low", "FIN": "very_low", "NZL": "very_low", "NOR": "very_low", 
+        "SWE": "very_low", "CHE": "very_low", "SGP": "very_low", "NLD": "very_low",
+        
+        # Low corruption (CPI 70-80)
+        "AUS": "low", "CAN": "low", "DEU": "low", "GBR": "low", "AUT": "low",
+        "BEL": "low", "IRL": "low", "JPN": "low", "EST": "low", "ISL": "low",
+        
+        # Moderate corruption (CPI 50-70)
+        "USA": "moderate", "FRA": "moderate", "ITA": "moderate", "ESP": "moderate",
+        "KOR": "moderate", "PRT": "moderate", "POL": "moderate", "CZE": "moderate",
+        "CHL": "moderate", "ISR": "moderate", "LTU": "moderate", "LVA": "moderate",
+        
+        # High corruption (CPI 30-50)
+        "IND": "high", "BRA": "high", "CHN": "high", "MEX": "high", "TUR": "high",
+        "RUS": "high", "IDN": "high", "THA": "high", "SAU": "high", "ARE": "high",
+        
+        # Very high corruption (CPI < 30)
+        "VEN": "very_high", "MMR": "very_high", "PRK": "very_high", "IRN": "very_high",
+        "AFG": "very_high", "SYR": "very_high", "YEM": "very_high", "SDN": "very_high"
+    }
+    
+    return corruption_levels.get(country_code, "moderate")  # Default to moderate
+
+
+def get_country_geography_advantages(country_code: str) -> List[str]:
+    """
+    Get geographic advantages for a country.
+    
+    Returns list of applicable geography constants.
+    """
+    # Based on geographic characteristics and strategic importance
+    geography_map = {
+        "USA": ["coastal_access", "resource_rich", "strategic_location"],
+        "GBR": ["island_advantage", "coastal_access", "strategic_location"],
+        "JPN": ["island_advantage", "coastal_access", "strategic_location"],
+        "AUS": ["island_advantage", "coastal_access", "resource_rich"],
+        "NZL": ["island_advantage", "coastal_access"],
+        "ITA": ["coastal_access", "strategic_location"],
+        "ESP": ["coastal_access", "strategic_location"],
+        "FRA": ["coastal_access", "strategic_location"],
+        "DEU": ["strategic_location"],
+        "NLD": ["coastal_access", "strategic_location"],
+        "BEL": ["coastal_access", "strategic_location"],
+        "CHE": ["mountain_barriers", "strategic_location"],
+        "AUT": ["mountain_barriers"],
+        "NOR": ["arctic_challenges", "coastal_access", "resource_rich"],
+        "SWE": ["arctic_challenges", "coastal_access"],
+        "FIN": ["arctic_challenges"],
+        "DNK": ["coastal_access", "strategic_location"],
+        "CAN": ["arctic_challenges", "coastal_access", "resource_rich"],
+        "CHN": ["coastal_access", "strategic_location", "resource_rich"],
+        "IND": ["coastal_access", "strategic_location"],
+        "BRA": ["coastal_access", "resource_rich"],
+        "RUS": ["arctic_challenges", "coastal_access", "resource_rich"],
+        "KOR": ["coastal_access", "strategic_location"],
+        "MEX": ["coastal_access", "resource_rich"],
+        "IDN": ["island_advantage", "coastal_access", "resource_rich"],
+        "SAU": ["desert_limitations", "resource_rich"],
+        "ARE": ["desert_limitations", "coastal_access", "resource_rich"],
+        "TUR": ["coastal_access", "strategic_location"],
+        "EGY": ["desert_limitations", "coastal_access", "strategic_location"],
+        "IRN": ["desert_limitations", "coastal_access", "resource_rich"],
+        "IRQ": ["desert_limitations", "resource_rich"],
+        "AFG": ["mountain_barriers", "desert_limitations"],
+        "PAK": ["mountain_barriers", "coastal_access"],
+        "BGD": ["coastal_access"],
+        "VNM": ["coastal_access", "strategic_location"],
+        "THA": ["coastal_access", "strategic_location"],
+        "MYS": ["coastal_access", "resource_rich"],
+        "SGP": ["island_advantage", "coastal_access", "strategic_location"],
+        "PHL": ["island_advantage", "coastal_access"],
+        "CHL": ["coastal_access", "resource_rich"],
+        "ARG": ["coastal_access", "resource_rich"],
+        "ZAF": ["coastal_access", "resource_rich"],
+        "NGA": ["coastal_access", "resource_rich"],
+        "EGY": ["desert_limitations", "coastal_access", "strategic_location"],
+        "ETH": ["landlocked"],
+        "KEN": ["coastal_access"],
+        "MAR": ["coastal_access"],
+        "TUN": ["coastal_access"],
+        "DZA": ["coastal_access", "desert_limitations", "resource_rich"],
+        "LBY": ["desert_limitations", "coastal_access", "resource_rich"],
+        "UKR": ["coastal_access", "strategic_location"],
+        "POL": ["coastal_access", "strategic_location"],
+        "CZE": ["landlocked"],
+        "HUN": ["landlocked"],
+        "ROU": ["coastal_access"],
+        "BGR": ["coastal_access"],
+        "HRV": ["coastal_access"],
+        "SRB": ["landlocked"],
+        "BIH": ["landlocked"],
+        "MKD": ["landlocked"],
+        "ALB": ["coastal_access"],
+        "MNE": ["coastal_access"],
+        "GRC": ["island_advantage", "coastal_access", "strategic_location"],
+        "CYP": ["island_advantage", "coastal_access", "strategic_location"],
+        "MLT": ["island_advantage", "coastal_access", "strategic_location"],
+        "ISL": ["island_advantage", "arctic_challenges", "resource_rich"],
+        "LUX": ["landlocked"],
+        "LIE": ["landlocked"],
+        "AND": ["mountain_barriers"],
+        "MCO": ["coastal_access"],
+        "SMR": ["landlocked"],
+        "VAT": ["landlocked"]
+    }
+    
+    return geography_map.get(country_code, ["strategic_location"])  # Default to strategic location
+
+
+def calculate_corruption_index(country_code: str) -> float:
+    """Calculate corruption index value (0-1) for a country."""
+    corruption_level = get_country_corruption_level(country_code)
+    return CORRUPTION_CONSTANTS[corruption_level]["score"]
+
+
+def calculate_geography_advantage(country_code: str) -> float:
+    """Calculate geography advantage multiplier for a country."""
+    geography_advantages = get_country_geography_advantages(country_code)
+    
+    # Combine multiple geography advantages (multiplicative)
+    total_multiplier = 1.0
+    for advantage in geography_advantages:
+        total_multiplier *= GEOGRAPHY_CONSTANTS[advantage]["multiplier"]
+    
+    # Cap the multiplier to reasonable bounds
+    return float(np.clip(total_multiplier, 0.5, 1.5))
 
 
 def compute_company_dominance_score(factor_values: np.ndarray) -> float:

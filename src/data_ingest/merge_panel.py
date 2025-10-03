@@ -115,6 +115,9 @@ def load_all_data(
     panel_df = _add_synthetic_competitiveness(panel_df)
     panel_df = _add_synthetic_financial_center(panel_df)
     
+    # Add corruption and geography constants
+    panel_df = _add_corruption_geography_data(panel_df)
+    
     # Create mask flags for missing data
     panel_df = _create_mask_flags(panel_df)
     
@@ -186,6 +189,30 @@ def _add_synthetic_financial_center(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _add_corruption_geography_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Add corruption index and geography advantage data."""
+    from ..data_schema import calculate_corruption_index, calculate_geography_advantage
+    
+    corruption_indices = []
+    geography_advantages = []
+    
+    for _, row in df.iterrows():
+        country = row['country']
+        
+        # Calculate corruption index (0-1, higher = more trustworthy)
+        corruption_idx = calculate_corruption_index(country)
+        corruption_indices.append(corruption_idx)
+        
+        # Calculate geography advantage (0.5-1.5 multiplier)
+        geography_adv = calculate_geography_advantage(country)
+        geography_advantages.append(geography_adv)
+    
+    df['corruption_index'] = corruption_indices
+    df['geography_advantage'] = geography_advantages
+    
+    return df
+
+
 def _create_mask_flags(df: pd.DataFrame) -> pd.DataFrame:
     """Create mask flags for missing data."""
     for factor in FACTOR_NAMES:
@@ -253,6 +280,8 @@ def create_country_data_objects(df: pd.DataFrame) -> List[CountryData]:
             reserve_currency_proxy=row.get('reserve_currency_proxy'),
             financial_center_proxy=row.get('financial_center_proxy'),
             debt=row.get('debt'),
+            corruption_index=row.get('corruption_index'),
+            geography_advantage=row.get('geography_advantage'),
             mask_education=row.get('mask_education', False),
             mask_innovation=row.get('mask_innovation', False),
             mask_competitiveness=row.get('mask_competitiveness', False),
@@ -260,7 +289,9 @@ def create_country_data_objects(df: pd.DataFrame) -> List[CountryData]:
             mask_trade_share=row.get('mask_trade_share', False),
             mask_reserve_currency_proxy=row.get('mask_reserve_currency_proxy', False),
             mask_financial_center_proxy=row.get('mask_financial_center_proxy', False),
-            mask_debt=row.get('mask_debt', False)
+            mask_debt=row.get('mask_debt', False),
+            mask_corruption_index=row.get('mask_corruption_index', False),
+            mask_geography_advantage=row.get('mask_geography_advantage', False)
         )
         country_data.append(data)
     
