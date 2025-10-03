@@ -1,25 +1,29 @@
 # Deep Learning to predict the future
 ## Project under construction....
-This repository utilizes public datasets and machine learning libraries to project socio-economic trends ten years in the future. The estimated accuracy is TBD.
+This repository explores whether nations and corporations follow similar rise-and-fall dynamics, and whether machine learning can project these trajectories into the future. By combining public socio-economic datasets with deep learning architectures, the project attempts to generate ten-year forecasts of both empires (countries) and companies (industries).
 
+At the core is a simple but provocative research question:
+### Are Empires and Companies one in the same?
 
-### Research question: Are Empires and Companies one in the same?
+To test this, I divide the data into two domains:
 
-I split my data in two: empires and companies. They are measured in the 8 dimensions below (Debt, Strength, Education...).
-### Constants (for empires)
- - Corruption score: poor data purity will restrict the learning rate and pentalize projection.
- - Geography score:  weighs optimism based on positioning and natural resources.
+- Empires (Countries): measured across eight structural dimensions such as debt, military strength, education, innovation, and reserve currency status.
+- Companies (Industries): measured across parallel dimensions such as market capitalization, R&D spending, revenue growth, employment share, and global market share.
 
-### (I may add constants for companies as well but have not thought it out yet)
+Additional constants are layered into the models to account for corruption (data trustworthiness) and geography (structural advantages or constraints like natural resources, trade access, and climate). These are treated not as predictors of year-to-year variance, but as underlying priors that shape long-term trajectories.
 
-From here, I train three models:
+From this foundation, I train three experimental models:
 
-1) World Order Forecast (WOF)
-2) Market Share Forecast (MSF)
-3) MSF Diluted from WOF
+1) World Order Forecast (WOF): projecting the relative standing of nations.
+2) Market Share Forecast (MSF): projecting industry and corporate dominance.
+3) MSF Diluted from WOF: combining the two perspectives to test whether national and corporate cycles reinforce or diverge from one another.
 
-### Validation
-I leave one country/industry out of training, and average a walk forward loss function. My initial idea was to cherrypick a candidate with a predictable history (to over estimate my model's accuracy), but a better approach is to determine the candidate with the most **average predictability** score. Though, it can still be said that because global events are captured by all training data, the accuracy metric will still be overestimated. This brings up the larger philsophical pursuit; ***it is impossible to judge the accuracy of predictive models, and man will never wield enough information to confidently predict the future.***
+### Validation Philosophy
+
+To measure accuracy, the models use a leave-one-out cross-validation strategy: excluding one country or industry from training, then testing predictions against its historical trajectory. Instead of cherry-picking predictable cases (which would inflate accuracy), the focus is on average predictability—candidates with moderate volatility and representative dynamics.
+
+Still, all forecasts remain provisional. Global events are interdependent, and any model trained on past data necessarily inherits both its scope and its blind spots. This highlights a larger truth:
+***predictive models can never know the future, but they can help uncover the structures and cycles that shape it.***
 
 ## Background
 
