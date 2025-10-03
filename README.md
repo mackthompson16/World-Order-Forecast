@@ -1,4 +1,4 @@
-# Deep Leaning to predict the future
+# Deep Learning to predict the future
 
 This project utilizes public datasets and machine learning libraries to project socio-economic trends ten years in the future. The estimated accuracy is n%.
 
@@ -11,7 +11,7 @@ I split my data in two: empires and companies. From here, I trained three models
 2) Market Share Forecast (MSF)
 3) MSF Diluted from WOF
 
-To develop an accuracy metric, I left one country and one industry out, and averaged a walk forward loss function. I must admit this metric is biased because I cherrypick a stable industry/country, and have already trained the model on wordly trends from that time period (it already understands historical shifts and events).
+To develop an accuracy metric, I leave one country/industry out of training, and average a walk forward loss function. Because I could cherrypick the left out candidate with the most predictable history (to over estimate my model's accuracy), I also determine a candidate with an **average predictability** score for unbiased validation. Though, it can still be said that because global events are captured by all training data, the accuracy metric will still be overestimated.
 ## Background
 
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
