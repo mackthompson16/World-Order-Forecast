@@ -12,6 +12,9 @@ I split my data in two: empires and companies. From here, I trained three models
 3) MSF Diluted from WOF
 
 To develop an accuracy metric, I leave one country/industry out of training, and average a walk forward loss function. Because I could cherrypick the left out candidate with the most predictable history (to over estimate my model's accuracy), I also determine a candidate with an **average predictability** score for unbiased validation. Though, it can still be said that because global events are captured by all training data, the accuracy metric will still be overestimated.
+
+I also include a corruption score for data purity and a geography score for optimism (more details below).
+
 ## Background
 
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
