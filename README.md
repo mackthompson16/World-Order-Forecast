@@ -1,6 +1,6 @@
 # Deep Learning to predict the future
-
-This project utilizes public datasets and machine learning libraries to project socio-economic trends ten years in the future. The estimated accuracy is n%.
+## Project under construction....
+This project utilizes public datasets and machine learning libraries to project socio-economic trends ten years in the future. The estimated accuracy is n% (TBD).
 
 
 ### Research question: Are Empires and Companies one in the same?
