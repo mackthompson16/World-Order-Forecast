@@ -1,17 +1,5 @@
 # Deep Learning to predict the future
 
-![Empire Composite Standing — Top 5 by Average](empire_standings_top5.png)
-
-Progress snapshot: The chart above summarizes the current “Empire Composite Standing” built from the public datasets we’ve assembled so far. It reflects the progress on data ingestion and normalization — not a trained forecast — and updates when new sources are added.
-
-What’s shown (current methodology)
-- Metrics integrated: GDP, Global Debt (inverted, lower is better), Military Strength, Innovation, Education, Competitiveness, and a derived ReservePower from IMF COFER (currencies mapped to issuing countries; EUR split across core Eurozone members by GDP share).
-- Per‑year min–max per metric: yearly min → 0, yearly max → 1; metrics averaged per country/year over available values only (missing coded as −1 and excluded).
-- Quality gates: a country‑year must have GDP present and at least 3 metrics to be included. The x‑axis starts at the first year where those conditions hold.
-- Ranking: Top 5 countries by average composite over the valid window (not total area), then plotted as lines.
-
-Data coverage helper: See `coverage_all_metrics_counts.png` for a single plot showing how many countries each metric covers per year (log scale). Detailed CSVs are written to `results/`.
-
 ## Project under construction....
 This repository explores whether nations and corporations follow similar rise-and-fall dynamics, and whether machine learning can project these trajectories into the future. By combining public socio-economic datasets with deep learning architectures, the project attempts to generate ten-year forecasts of both empires (countries) and companies (industries).
 
@@ -43,6 +31,17 @@ Still, all forecasts remain provisional. Global events are interdependent, and a
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
 
 His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
+
+# Graph Progress so far
+## Need to pull from more sources to get a bigger picture
+![Empire Composite Standing — Top 5 by Average](empire_standings_top5.png)
+
+What’s shown (current methodology)
+- Metrics integrated: GDP, Global Debt, Military Strength, Innovation, Education, Competitiveness, and a derived ReservePower from IMF COFER
+- Per‑year min–max per metric: yearly min → 0, yearly max → 1; metrics averaged per country/year over available values only (missing coded as −1 and excluded).
+- Quality gates: a country‑year must have GDP present and at least 3 metrics to be included. The x‑axis starts at the first year where those conditions hold.
+- Ranking: Top 5 countries by average composite over the valid window (not total area), then plotted as lines.
+
 
 ## Data
 
