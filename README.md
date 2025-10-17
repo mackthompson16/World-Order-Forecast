@@ -32,10 +32,11 @@ I was first introduced to this idea reading Ray Dalio's compelling piece, [Princ
 
 His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
 
-# Graph Progress so far
+# Reconstruction of Ray's Graph Progress
 ## Need to pull from more sources to get a bigger picture
 ![Empire Composite Standing — Top 5 by Average](empire_standings_top5.png)
-
+## Ray's Graph
+![Ray Dalio's - Target Graph](img.png)
 What’s shown (current methodology)
 - Metrics integrated: GDP, Global Debt, Military Strength, Innovation, Education, Competitiveness, and a derived ReservePower from IMF COFER
 - Per‑year min–max per metric: yearly min → 0, yearly max → 1; metrics averaged per country/year over available values only (missing coded as −1 and excluded).
