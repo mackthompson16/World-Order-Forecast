@@ -36,8 +36,8 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 ## Need to pull from more sources to get a bigger picture
 ![Empire Composite Standing — Top 5 by Average](empire_standings_top5.png)
 ## Ray's Graph
-![Ray Dalio's - Target Graph](img.png)
-What’s shown (current methodology)
+![Ray Dalio's - Target Graph](image.png)
+## What’s shown (current methodology)
 - Metrics integrated: GDP, Global Debt, Military Strength, Innovation, Education, Competitiveness, and a derived ReservePower from IMF COFER
 - Per‑year min–max per metric: yearly min → 0, yearly max → 1; metrics averaged per country/year over available values only (missing coded as −1 and excluded).
 - Quality gates: a country‑year must have GDP present and at least 3 metrics to be included. The x‑axis starts at the first year where those conditions hold.
