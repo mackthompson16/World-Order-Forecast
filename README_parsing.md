@@ -30,3 +30,16 @@ Notes and assumptions
 - Data with no year variation in a given metric-year maps to 0.5 for all countries for that metric-year.
 - The composite averages only available normalized metrics (non-negative raw), per your specification that -1 is the explicit missing/exclude mark.
 - If additional metrics need direction inversion (lower-is-better), we can extend the script to invert those before normalization.
+
+Data layout (multi-source friendly)
+- You can organize files by metric under `data/<Metric>/` with descriptive filenames: `<Measurement>_<start>_<end>.<ext>`.
+- Example folders and names:
+  - `data/GlobalDebt/GeneralGovernmentDebt_pctGDP_1950_2024.csv`
+  - `data/Education/AverageYearsSchooling_1990_2023.csv`
+  - `data/MilitaryStrength/MilitaryExpenditure_USD_const2023_1949_2024.xlsx`
+  - `data/GDP/GDP_Total_1820_2022.dta`
+  - `data/Competitiveness/GCI_2007_2017.csv`
+  - `data/Innovation/PatentApplications_perMillion_1980_2021.csv`
+  - `data/ReserveCurrency/ReserveCurrencyShares_1995_2025.csv`
+- The parser now scans `data/` recursively and uses the parent folder name as the metric label when present (fallback to filename heuristics).
+- Helper to (re)organize: `python scripts/organize_data.py` (dry-run). Add `--apply` to move/rename into the structure above.

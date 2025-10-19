@@ -12,7 +12,13 @@ def main(data_dir: Optional[str] = None) -> None:
     results_dir = Path("results").resolve()
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"[INFO] Data root: {data_root}")
     panel, problems = collect_panel(data_root)
+    if not panel.empty:
+        try:
+            print(f"[INFO] Collected panel: rows={len(panel)}, metrics={panel['Metric'].nunique()}, countries={panel['Country'].nunique()}")
+        except Exception:
+            pass
     if panel.empty:
         print(f"No data parsed from {data_root}. See warnings: {results_dir / 'parsing_warnings.csv'}")
         if problems:
@@ -23,8 +29,10 @@ def main(data_dir: Optional[str] = None) -> None:
     summarize_schema(panel).to_csv(results_dir / "parsed_schema_summary.csv", index=False)
     (panel[["Country"]].drop_duplicates().sort_values("Country")).to_csv(results_dir / "countries_list.csv", index=False)
 
-    # Coverage: data points per metric per year
-    coverage = compute_coverage(panel)
+    # Build wide, mark missing as -1 for raw metrics
+    wide = pivot_metrics(panel)
+    # Coverage: unique countries with non-missing per metric per year (no double-counting subpages)
+    coverage = compute_coverage_from_wide(wide)
     coverage.to_csv(results_dir / "data_coverage_by_metric_year.csv", index=False)
     # Only keep the combined coverage plot (remove per-metric plots if any exist)
     plot_coverage_combined(coverage, Path("coverage_all_metrics_counts.png"), logy=True)
@@ -35,8 +43,6 @@ def main(data_dir: Optional[str] = None) -> None:
     except Exception:
         pass
 
-    # Build wide, mark missing as -1 for raw metrics
-    wide = pivot_metrics(panel)
     # Compute normalized metrics per year (min-max) and composite
     composite = compute_composite(wide)
     composite.to_csv(results_dir / "empire_composite.csv", index=False)
@@ -54,8 +60,12 @@ def main(data_dir: Optional[str] = None) -> None:
 
     if problems:
         pd.DataFrame(problems, columns=["file", "note"]).to_csv(results_dir / "parsing_warnings.csv", index=False)
+        # Also echo warnings to console
+        print("[WARN] Parsing issues:")
+        for f, n in problems:
+            print(f"  - {f}: {n}")
 
-    print("Done. Outputs written to 'results/'.")
+    print("[INFO] Done. CSVs in results/, images at repo root.")
 
 
 ########################################
@@ -527,62 +537,95 @@ def collect_panel(data_root: Path) -> Tuple[pd.DataFrame, List[Tuple[str, str]]]
     if not data_root.exists():
         return pd.DataFrame(columns=["Country", "Year", "Metric", "Value"]), [(str(data_root), "Data directory does not exist")] 
 
-    for path in sorted(data_root.glob("*")):
+    # Recurse into subfolders to support data/<Metric>/* layouts
+    for path in sorted(p for p in data_root.rglob("*") if p.is_file()):
         if path.name.startswith("~$"):
             continue
         if path.suffix.lower() not in SUPPORTED_EXT:
             continue
 
+        # Allow directory-driven metric naming: use parent directory as a hint
+        parent_name = path.parent.name
         metric = metric_from_filename(path)
+        # Prefer the parent directory if it looks like a known metric label
+        if parent_name in {"GDP","GlobalDebt","MilitaryStrength","Innovation","Education","Competitiveness","ReserveCurrency","ReservePower"}:
+            metric = parent_name
+        print(f"[PARSE] {path} -> metric={metric}")
         if metric == "ReserveCurrency":
             # Defer parsing until after other data so we can GDP-weight EUR
             reserve_path = path
+            print(f"[PARSE] Deferring COFER (ReserveCurrency) for later: {path.name}")
             continue
 
         # special-case military sheet
-        if path.suffix.lower() == ".xlsx" and path.stem == "MillitaryStrength":
+        if (metric == "MilitaryStrength" and path.suffix.lower() in {".xlsx", ".xls"}) or (path.suffix.lower() == ".xlsx" and path.stem == "MillitaryStrength"):
             ms = parse_military_strength_excel(path)
             if ms is None:
-                problems.append((path.name, "Military sheet not parsed"))
+                problems.append((str(path), "Military sheet not parsed"))
+                print(f"[WARN] MilitaryStrength not parsed: {path}")
                 continue
             ms["Country"] = ms["Country"].apply(standardize_country)
             ms = ms.dropna(subset=["Country"]).copy()
             frames.append(ms)
+            try:
+                yrs = pd.to_numeric(ms["Year"], errors="coerce").dropna()
+                print(f"[OK] MilitaryStrength parsed: rows={len(ms)} years=[{int(yrs.min())}-{int(yrs.max())}] countries={ms['Country'].nunique()}")
+            except Exception:
+                print(f"[OK] MilitaryStrength parsed: rows={len(ms)}")
             continue
 
         # special-case global debt xls sheet
-        if path.suffix.lower() == ".xls" and path.stem == "globalDebt1950":
+        if path.suffix.lower() == ".xls" and (path.stem == "globalDebt1950" or metric == "GlobalDebt"):
             gd = parse_global_debt_xls(path)
             if gd is None:
-                problems.append((path.name, "GG_DEBT_GDP sheet not parsed"))
+                problems.append((str(path), "GG_DEBT_GDP sheet not parsed"))
+                print(f"[WARN] GlobalDebt XLS not parsed: {path}")
+            else:
+                gd["Country"] = gd["Country"].apply(standardize_country)
+                gd = gd.dropna(subset=["Country"]).copy()
+                frames.append(gd)
+                try:
+                    yrs = pd.to_numeric(gd["Year"], errors="coerce").dropna()
+                    print(f"[OK] GlobalDebt (xls) parsed: rows={len(gd)} years=[{int(yrs.min())}-{int(yrs.max())}] countries={gd['Country'].nunique()}")
+                except Exception:
+                    print(f"[OK] GlobalDebt (xls) parsed: rows={len(gd)}")
                 continue
-            gd["Country"] = gd["Country"].apply(standardize_country)
-            gd = gd.dropna(subset=["Country"]).copy()
-            frames.append(gd)
-            continue
 
         # special-case global debt csv
-        if path.suffix.lower() == ".csv" and path.stem == "globalDebt":
+        if path.suffix.lower() == ".csv" and (path.stem == "globalDebt" or metric == "GlobalDebt"):
             gd = parse_global_debt_csv(path)
             if gd is None:
-                problems.append((path.name, "globalDebt.csv not parsed"))
+                problems.append((str(path), "globalDebt.csv not parsed"))
+                print(f"[WARN] GlobalDebt CSV not parsed: {path}")
                 continue
             gd["Country"] = gd["Country"].apply(standardize_country)
             gd = gd.dropna(subset=["Country"]).copy()
             frames.append(gd)
+            try:
+                yrs = pd.to_numeric(gd["Year"], errors="coerce").dropna()
+                print(f"[OK] GlobalDebt (csv) parsed: rows={len(gd)} years=[{int(yrs.min())}-{int(yrs.max())}] countries={gd['Country'].nunique()}")
+            except Exception:
+                print(f"[OK] GlobalDebt (csv) parsed: rows={len(gd)}")
             continue
 
         df = _safe_read(path)
         if df is None:
-            problems.append((path.name, "Failed to read"))
+            problems.append((str(path), "Failed to read"))
+            print(f"[WARN] Failed to read: {path}")
             continue
         norm = normalize_dataset(df, metric, path.name)
         if norm is None:
-            problems.append((path.name, "Unrecognized schema; skipped"))
+            problems.append((str(path), "Unrecognized schema; skipped"))
+            print(f"[WARN] Unrecognized schema; skipped: {path} (metric={metric})")
             continue
         norm["Country"] = norm["Country"].apply(standardize_country)
         norm = norm.dropna(subset=["Country"]).copy()
         frames.append(norm)
+        try:
+            yrs = pd.to_numeric(norm["Year"], errors="coerce").dropna()
+            print(f"[OK] {metric} parsed: file={path.name} rows={len(norm)} years=[{int(yrs.min())}-{int(yrs.max())}] countries={norm['Country'].nunique()}")
+        except Exception:
+            print(f"[OK] {metric} parsed: file={path.name} rows={len(norm)}")
 
     if not frames and reserve_path is None:
         return pd.DataFrame(columns=["Country", "Year", "Metric", "Value"]), problems
@@ -595,11 +638,24 @@ def collect_panel(data_root: Path) -> Tuple[pd.DataFrame, List[Tuple[str, str]]]
             if reserves is not None and not reserves.empty:
                 frames.append(reserves)
                 panel = pd.concat([panel, reserves], ignore_index=True)
+                try:
+                    yrs = pd.to_numeric(reserves["Year"], errors="coerce").dropna()
+                    print(f"[OK] ReservePower parsed: rows={len(reserves)} years=[{int(yrs.min())}-{int(yrs.max())}] countries={reserves['Country'].nunique()}")
+                except Exception:
+                    print(f"[OK] ReservePower parsed: rows={len(reserves)}")
             else:
-                problems.append((reserve_path.name, "COFER parsed empty or failed"))
+                problems.append((str(reserve_path), "COFER parsed empty or failed"))
+                print(f"[WARN] COFER parsed empty or failed: {reserve_path}")
         except Exception as e:
-            problems.append((reserve_path.name, f"COFER parsing error: {e}"))
+            problems.append((str(reserve_path), f"COFER parsing error: {e}"))
+            print(f"[ERROR] COFER parsing error: {e}")
     panel = panel.dropna(subset=["Year"]).reset_index(drop=True)
+    try:
+        print("[INFO] Rows per metric after collection:")
+        for m, n in panel.groupby("Metric").size().sort_values(ascending=False).items():
+            print(f"  - {m}: {n}")
+    except Exception:
+        pass
     return panel, problems
 
 
@@ -613,6 +669,12 @@ def pivot_metrics(panel: pd.DataFrame) -> pd.DataFrame:
     metric_cols = [c for c in pivot.columns if c not in {"Country", "Year"}]
     for m in metric_cols:
         pivot[m] = pivot[m].fillna(-1)
+    try:
+        print("[INFO] Wide table non-missing counts per metric (value != -1):")
+        for m in metric_cols:
+            print(f"  - {m}: {(pivot[m] != -1).sum()}")
+    except Exception:
+        pass
     return pivot
 
 
@@ -620,25 +682,38 @@ def compute_composite(wide: pd.DataFrame) -> pd.DataFrame:
     df = wide.copy()
     metric_cols = [c for c in df.columns if c not in {"Country", "Year"}]
 
-    # Per-year min-max normalization per metric, skipping -1 values.
+    # All-time min-max normalization per metric across all years, skipping -1 values.
     lower_is_better = {"GlobalDebt"}
+    print(f"[INFO] Normalizing metrics all-time (min-max across all years). Metrics: {', '.join(metric_cols)}")
     for m in metric_cols:
         norm_col = f"{m}_norm"
         df[norm_col] = np.nan
-        for yr, idx in df.groupby("Year").groups.items():
-            s = df.loc[idx, m]
-            valid_mask = s.ge(0) & s.notna()
-            if not valid_mask.any():
-                continue
-            v = pd.to_numeric(s.where(valid_mask), errors="coerce")
-            vmin, vmax = v.min(), v.max()
-            if pd.isna(vmin) or pd.isna(vmax) or vmax == vmin:
-                df.loc[idx, norm_col] = np.where(valid_mask, 0.5, np.nan)
-            else:
-                scaled = (v - vmin) / (vmax - vmin)
-                if m in lower_is_better:
-                    scaled = 1.0 - scaled
-                df.loc[idx, norm_col] = scaled
+        s_all = pd.to_numeric(df[m], errors="coerce")
+        valid_mask_all = s_all.ge(0) & s_all.notna()
+        if not valid_mask_all.any():
+            print(f"[WARN] No valid values for metric {m}; normalized column will remain NaN")
+            continue
+        v = s_all.where(valid_mask_all)
+        vmin, vmax = v.min(), v.max()
+        if pd.isna(vmin) or pd.isna(vmax) or vmax == vmin:
+            # no variation -> neutral 0.5 where valid
+            df.loc[valid_mask_all, norm_col] = 0.5
+        else:
+            scaled_all = (v - vmin) / (vmax - vmin)
+            if m in lower_is_better:
+                scaled_all = 1.0 - scaled_all
+            df.loc[valid_mask_all, norm_col] = scaled_all
+    try:
+        norm_cols = [c for c in df.columns if c.endswith('_norm')]
+        print("[INFO] Normalized coverage (rows with non-NaN) and min/max per metric:")
+        for nc in norm_cols:
+            base = nc[:-5]
+            cnt = df[nc].notna().sum()
+            mn = pd.to_numeric(df[nc], errors='coerce').min()
+            mx = pd.to_numeric(df[nc], errors='coerce').max()
+            print(f"  - {nc}: count={cnt} min={mn} max={mx}")
+    except Exception:
+        pass
 
     norm_cols = [c for c in df.columns if c.endswith("_norm")]
     # Composite: average only available (non-negative raw -> valid normalized). No penalty; strictly exclude missing (-1).
@@ -760,14 +835,37 @@ def compute_top5_by_year(composite: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_coverage(panel: pd.DataFrame) -> pd.DataFrame:
+    # Deprecated in favor of compute_coverage_from_wide; kept for reference.
     if panel.empty:
         return pd.DataFrame(columns=["Metric", "Year", "Count"])
     tmp = panel.dropna(subset=["Year"]).copy()
     tmp["Year"] = pd.to_numeric(tmp["Year"], errors="coerce")
     tmp = tmp.dropna(subset=["Year"])  # keep numeric years
-    cov = tmp.groupby(["Metric", "Year"]).size().reset_index(name="Count")
-    cov = cov.sort_values(["Metric", "Year"]).reset_index(drop=True)
-    return cov
+    cov = (
+        tmp.dropna(subset=["Value"]) 
+           .groupby(["Metric", "Year"]) ["Country"].nunique()
+           .reset_index(name="Count")
+    )
+    return cov.sort_values(["Metric", "Year"]).reset_index(drop=True)
+
+
+def compute_coverage_from_wide(wide: pd.DataFrame) -> pd.DataFrame:
+    if wide.empty:
+        return pd.DataFrame(columns=["Metric", "Year", "Count"])
+    df = wide.copy()
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    df = df.dropna(subset=["Year"]).reset_index(drop=True)
+    metric_cols = [c for c in df.columns if c not in {"Country", "Year"}]
+    rows = []
+    for m in metric_cols:
+        # Presence if value != -1 and not NaN
+        pres = df[["Year", m]].copy()
+        pres["present"] = pres[m].apply(lambda v: (pd.notna(v)) and (float(v) != -1.0))
+        cnt = pres.groupby("Year")["present"].sum().reset_index()
+        for _, r in cnt.iterrows():
+            rows.append({"Metric": m, "Year": int(r["Year"]), "Count": int(r["present"])})
+    cov = pd.DataFrame(rows)
+    return cov.sort_values(["Metric", "Year"]).reset_index(drop=True)
 
 
 def _sanitize_filename(s: str) -> str:
@@ -800,6 +898,8 @@ def plot_coverage_combined(coverage: pd.DataFrame, out_path: Path, logy: bool = 
     cov["Year"] = pd.to_numeric(cov["Year"], errors="coerce")
     cov = cov.dropna(subset=["Year"])  # numeric years only
     pivot = cov.pivot_table(index="Year", columns="Metric", values="Count", aggfunc="sum").sort_index()
+    # Do not draw lines down to zero; mask zeros so series start/end cleanly
+    pivot = pivot.where(pivot > 0)
     # Dynamic start: first year where at least 3 metrics have data (>0 count)
     presence = (pivot.fillna(0) > 0).sum(axis=1)
     valid_years = presence[presence >= 3].index
@@ -817,7 +917,12 @@ def plot_coverage_combined(coverage: pd.DataFrame, out_path: Path, logy: bool = 
     plt.grid(True, which='both', alpha=0.3)
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.xlim(xmin, xmax)
+    # Add small horizontal padding so first/last points don’t touch the axes
+    try:
+        plt.xlim(xmin - 1, xmax + 1)
+        plt.margins(x=0.02)
+    except Exception:
+        plt.xlim(xmin, xmax)
     plt.savefig(out_path, dpi=150)
     plt.close()
 
