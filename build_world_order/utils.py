@@ -16,14 +16,14 @@ _ALIAS_MAP: Dict[str, str] = {
     "UNITED STATES": "USA",
     "UNITED STATES OF AMERICA": "USA",
     # ISO3 codes (selected, expandable)
-    "DEU": "GERMANY",
+    "GMY": "GERMANY",
     "CHN": "CHINA",
     "RUS": "RUSSIA",
-    "FRA": "FRANCE",
-    "NLD": "NETHERLANDS",
+    "FRN": "FRANCE",
+    "NTH": "NETHERLANDS",
     "IND": "INDIA",
     "GBR": "UNITED KINGDOM",
-    "UKM": "UNITED KINGDOM",
+    "UKG": "UNITED KINGDOM",
     "CAN": "CANADA",
     "AUS": "AUSTRALIA",
     "JPN": "JAPAN",
@@ -107,6 +107,39 @@ def forward_fill_by_group(df: pd.DataFrame, group_cols: Iterable[str], sort_cols
         df.groupby(list(group_cols), dropna=False)[list(cols_to_ffill)].ffill()
     )
     return df
+
+
+def nearest_fill_by_group(
+    df: pd.DataFrame,
+    group_cols: Iterable[str],
+    sort_col: str,
+    cols_to_fill: Iterable[str],
+) -> pd.DataFrame:
+    """Fill NaNs within each group using the temporally nearest available value.
+
+    - Sorts by `sort_col` within each group
+    - Uses pandas interpolate(method='nearest', limit_direction='both') on a numeric index
+    - Works best when `sort_col` is numeric (e.g., year)
+    """
+    out = df.copy()
+    # Ensure numeric type for interpolation targets
+    for c in cols_to_fill:
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+
+    def _fill_group(g: pd.DataFrame) -> pd.DataFrame:
+        g = g.sort_values(sort_col)
+        if sort_col not in g.columns:
+            return g
+        # Build numeric index for interpolation
+        g = g.set_index(sort_col)
+        for c in cols_to_fill:
+            if c in g.columns:
+                g[c] = g[c].interpolate(method="nearest", limit_direction="both")
+        g = g.reset_index()
+        return g
+
+    out = out.groupby(list(group_cols), dropna=False, as_index=False, group_keys=False).apply(_fill_group)
+    return out
 
 
 def min_max_norm_by_year(df: pd.DataFrame, year_col: str, value_col: str, out_col: str) -> pd.DataFrame:

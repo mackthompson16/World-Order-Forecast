@@ -7,6 +7,7 @@ import pandas as pd
 from .loaders import load_education, load_military, load_gmd
 from .metrics import compute_metrics
 from .plotting import plot_world_order_composite, plot_raw_metric_diagnostics, TARGET_COUNTRIES
+from .diagnostics import compute_data_coverage, plot_data_coverage
 from .utils import ensure_dirs
 
 
@@ -46,8 +47,13 @@ def run(selected_countries: List[str] = None) -> None:
     )
     plot_raw_metric_diagnostics(metrics_df, RESULTS_DIR, countries=selected_countries)
 
+    # Coverage timeline for inputs used by metrics (raw availability counts)
+    coverage_df = compute_data_coverage(edu_path, mil_path, gmd_path)
+    coverage_path = plot_data_coverage(coverage_df, RESULTS_DIR, start_year=1800, end_year=2024)
+
     print(f"Saved composite graph to: {composite_path}")
     print(f"Raw metric diagnostics saved under: {os.path.join(RESULTS_DIR, 'raw_metrics')}")
+    print(f"Saved data coverage timeline to: {coverage_path}")
 
 
 if __name__ == "__main__":

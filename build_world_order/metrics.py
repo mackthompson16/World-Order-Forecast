@@ -44,11 +44,16 @@ def compute_metrics(edu: pd.DataFrame, mil: pd.DataFrame, gmd: pd.DataFrame) -> 
     gmd_econ = min_max_norm_by_year(gmd_econ, "year", "rgdp_share", "EconomicIndex")
     gmd_econ = gmd_econ[["country", "year", "EconomicIndex"]]
 
-    # 4) TradeShare = norm((exports_USD + imports_USD) / sum(...))
+    # 4) TradeShare = avg(norm(export_share), norm(import_share)) of available parts
     gmd_trade = gmd[["country", "year", "exports_USD", "imports_USD"]].copy()
-    gmd_trade["trade_val"] = gmd_trade[["exports_USD", "imports_USD"]].sum(axis=1, skipna=True)
-    gmd_trade = share_by_year(gmd_trade, "year", "trade_val", "trade_share")
-    gmd_trade = min_max_norm_by_year(gmd_trade, "year", "trade_share", "TradeShare")
+    gmd_trade["exports_USD"] = pd.to_numeric(gmd_trade["exports_USD"], errors="coerce")
+    gmd_trade["imports_USD"] = pd.to_numeric(gmd_trade["imports_USD"], errors="coerce")
+    # Compute separate shares and normalize them
+    gmd_trade = share_by_year(gmd_trade, "year", "exports_USD", "exports_share")
+    gmd_trade = share_by_year(gmd_trade, "year", "imports_USD", "imports_share")
+    gmd_trade = min_max_norm_by_year(gmd_trade, "year", "exports_share", "exports_norm")
+    gmd_trade = min_max_norm_by_year(gmd_trade, "year", "imports_share", "imports_norm")
+    gmd_trade["TradeShare"] = gmd_trade[["exports_norm", "imports_norm"]].mean(axis=1, skipna=True)
     gmd_trade = gmd_trade[["country", "year", "TradeShare"]]
 
     # 5) ReserveCurrency = 1 - (norm(USDfx) + norm(infl) + norm(CA_GDP)) / 3
@@ -90,4 +95,3 @@ def compute_metrics(edu: pd.DataFrame, mil: pd.DataFrame, gmd: pd.DataFrame) -> 
     # Keep numeric years only
     out = out.dropna(subset=["year"]).sort_values(["country", "year"]).reset_index(drop=True)
     return out
-

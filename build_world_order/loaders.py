@@ -40,6 +40,7 @@ def load_education(path: str) -> pd.DataFrame:
 
     # Forward-fill within each country
     edu[value_name] = pd.to_numeric(edu[value_name], errors="coerce")
+    # Forward-fill within each country (only use year-1, year-2, ...)
     edu = forward_fill_by_group(edu, ["country"], ["year"], [value_name])
     return edu
 
@@ -124,4 +125,3 @@ def load_gmd(path: str) -> pd.DataFrame:
     fcols = [c for c in out.columns if c not in ("country", "year")]
     out = forward_fill_by_group(out, ["country"], ["year"], fcols)
     return out
-

@@ -6,7 +6,16 @@ import pandas as pd
 from .utils import ensure_dirs, rolling_smooth, canonical_country
 
 
-TARGET_COUNTRIES = ["RUSSIA", "GERMANY", "CHINA", "USA", "FRANCE", "NETHERLANDS", "INDIA"]
+TARGET_COUNTRIES = [
+    "RUSSIA",
+    "GERMANY",
+    "CHINA",
+    "USA",
+    "FRANCE",
+    "NETHERLANDS",
+    "INDIA",
+    "UNITED KINGDOM",
+]
 
 
 def _filter_countries(df: pd.DataFrame, countries: Sequence[str]) -> pd.DataFrame:
@@ -36,15 +45,63 @@ def plot_world_order_composite(
         df = df[df["year"] <= end_year]
 
     plt.figure(figsize=(10, 6))
+
+    # Emphasize these countries (bold lines)
+    emphasize = {canonical_country(c) for c in ["CHINA", "UNITED KINGDOM", "USA", "GERMANY"]}
+
     for country, sub in df.groupby("country"):
         sub = sub.sort_values("year")
         ys = rolling_smooth(sub["Composite"], window=smooth_window)
-        plt.plot(sub["year"], ys, label=country)
+        if country in emphasize:
+            plt.plot(
+                sub["year"], ys,
+                label=country,
+                linewidth=3.0,
+                linestyle='-',
+                alpha=0.95,
+                zorder=3,
+            )
+        else:
+            plt.plot(
+                sub["year"], ys,
+                label=country,
+                linewidth=1.0,
+                linestyle='--',
+                alpha=0.8,
+                zorder=2,
+            )
+
+    # Shade notable global periods and label them
+    ax = plt.gca()
+    periods = [
+        (1914, 1918, "WW1"),
+        (1939, 1945, "WW2"),
+    ]
+    for start, end, label in periods:
+        ax.axvspan(start, end, color="grey", alpha=0.15, zorder=1)
+        xmid = (start + end) / 2.0
+        ymin, ymax = ax.get_ylim()
+        y = ymin + 0.94 * (ymax - ymin)
+        ax.text(
+            xmid,
+            y,
+            label,
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="dimgray",
+            zorder=4,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.6),
+        )
 
     plt.title("World Order Composite Standing (Smoothed)")
     plt.xlabel("Year")
     plt.ylabel("Composite Score (0-1)")
-    plt.legend(ncol=2, fontsize=8)
+    leg = plt.legend(ncol=2, fontsize=8)
+    # Bold legend labels for emphasized countries
+    for txt in leg.get_texts():
+        if canonical_country(txt.get_text()) in emphasize:
+            txt.set_fontweight('bold')
     plt.grid(True, alpha=0.3)
     out_path = f"{out_dir}/World_Order_Graph.png"
     plt.tight_layout()
