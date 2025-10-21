@@ -34,7 +34,7 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 
 # Reconstruction of Ray's Graph Progress
 ## Need to pull from more sources to get a bigger picture
-![Empire Composite Standing — Top 5 by Average](empire_standings_top5.png)
+![Empire Composite Standing — Top 5 by Average](World_Order_Graph.png)
 ## Ray's Graph
 ![Ray Dalio's - Target Graph](image.png)
 ## What’s shown (current methodology)
