@@ -1,182 +1,94 @@
-from typing import List, Sequence
+from __future__ import annotations
+
+from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from .utils import ensure_dirs, rolling_smooth, canonical_country
+from .utils import WarPeriod, WW1, WW2
 
 
-TARGET_COUNTRIES = [
-    "RUSSIA",
-    "GERMANY",
-    "CHINA",
-    "USA",
-    "FRANCE",
-    "NETHERLANDS",
-    "INDIA",
-    "UNITED KINGDOM",
-]
+def _shade_war(ax, war: WarPeriod, ymin: float = 0.0, ymax: float = 1.0):
+    ax.axvspan(war.start, war.end, color="gray", alpha=0.2, ymin=ymin, ymax=ymax, label=war.label)
 
 
-def _filter_countries(df: pd.DataFrame, countries: Sequence[str]) -> pd.DataFrame:
-    keys = [canonical_country(c) for c in countries]
-    return df[df["country"].isin(keys)].copy()
+def plot_composite(df: pd.DataFrame, selected: List[str], outpath: Path):
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-
-def plot_world_order_composite(
-    metrics_df: pd.DataFrame,
-    out_dir: str,
-    smooth_window: int = 5,
-    countries: Sequence[str] = TARGET_COUNTRIES,
-    start_year: int = 1800,
-    end_year: int | None = None,
-) -> str:
-    ensure_dirs(out_dir)
-    df = metrics_df.copy()
-    metric_cols = [c for c in [
-        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter", "Innovation", "Competitiveness"
-    ] if c in df.columns]
-
-    precomputed = "WorldOrderIndex" in df.columns
-    if precomputed:
-        df["Composite"] = df["WorldOrderIndex"]
-    # Create aliases to match requested weighting schema
-    if "Innovation" in df.columns:
-        df["Technology"] = df["Innovation"]
-    if "EconomicIndex" in df.columns:
-        df["EconomicOutput"] = df["EconomicIndex"]
-
-    # Weighted composite with renormalization over available metrics
-    weights = {
-        "Education": 0.15,
-        "Competitiveness": 0.15,
-        "Technology": 0.15,
-        "EconomicOutput": 0.15,
-        "TradeShare": 0.10,
-        "Military": 0.10,
-        "FinancialCenter": 0.10,
-        "ReserveCurrency": 0.10,
-    }
-    # Select available columns from the weighting schema
-    available_cols = [k for k in weights.keys() if k in df.columns]
-    # Weighted sum
-    value_mat = df[available_cols]
-    weight_vec = pd.Series({k: weights[k] for k in available_cols})
-    weighted_sum = (value_mat * weight_vec).sum(axis=1, skipna=True)
-    # Sum of weights present (non-null per row)
-    present_weights = value_mat.notna().astype(float) * weight_vec
-    present_weights = present_weights.sum(axis=1)
-    if not precomputed:
-        df["Composite"] = weighted_sum.divide(present_weights).where(present_weights > 0)
-
-    df = _filter_countries(df, countries)
-    # Start from requested year threshold
-    df = df[df["year"] >= start_year]
-    if end_year is not None:
-        df = df[df["year"] <= end_year]
-
-    plt.figure(figsize=(10, 6))
-
-    # Emphasize these countries (bold lines)
-    emphasize = {canonical_country(c) for c in ["CHINA", "UNITED KINGDOM", "USA", "GERMANY"]}
-
-    for country, sub in df.groupby("country"):
-        sub = sub.sort_values("year")
-        ys = rolling_smooth(sub["Composite"], window=smooth_window)
-        if country in emphasize:
-            plt.plot(
-                sub["year"], ys,
+    dashed_small = {"RUSSIA", "FRANCE", "GERMANY"}
+    for country in selected:
+        sub = df[df["country"] == country].dropna(subset=["WorldOrderIndex"])  # already smoothed upstream if desired
+        if sub.empty:
+            continue
+        if country in dashed_small:
+            ax.plot(
+                sub["year"],
+                sub["WorldOrderIndex"],
                 label=country,
-                linewidth=3.0,
-                linestyle='-',
-                alpha=0.95,
-                zorder=3,
+                linewidth=1.5,
+                linestyle="--",
             )
         else:
-            plt.plot(
-                sub["year"], ys,
+            ax.plot(
+                sub["year"],
+                sub["WorldOrderIndex"],
                 label=country,
-                linewidth=1.0,
-                linestyle='--',
-                alpha=0.8,
-                zorder=2,
+                linewidth=2.5,
+                linestyle="-",
             )
 
-    # Shade notable global periods and label them
-    ax = plt.gca()
-    periods = [
-        (1914, 1918, "WW1"),
-        (1939, 1945, "WW2"),
+    _shade_war(ax, WW1)
+    _shade_war(ax, WW2)
+    ax.set_title("World Order Index (smoothed)")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Index (0-1)")
+    ax.set_xlim(df["year"].min(), df["year"].max())
+    ax.set_ylim(0, 1)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150)
+    plt.close(fig)
+
+
+def plot_raw_metrics(df: pd.DataFrame, country: str, outpath: Path):
+    metrics = [
+        "education",
+        "competitiveness",
+        "innovation",
+        "economic_index",
+        "trade_share",
+        "military",
+        "financial_center",
+        "reserve_currency",
     ]
-    for start, end, label in periods:
-        ax.axvspan(start, end, color="grey", alpha=0.15, zorder=1)
-        xmid = (start + end) / 2.0
-        ymin, ymax = ax.get_ylim()
-        y = ymin + 0.94 * (ymax - ymin)
-        ax.text(
-            xmid,
-            y,
-            label,
-            ha="center",
-            va="top",
-            fontsize=8,
-            color="dimgray",
-            zorder=4,
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.6),
-        )
-
-    plt.title("World Order Composite Standing (Smoothed)")
-    plt.xlabel("Year")
-    plt.ylabel("Composite Score (0-1)")
-    leg = plt.legend(ncol=2, fontsize=8)
-    # Bold legend labels for emphasized countries
-    for txt in leg.get_texts():
-        if canonical_country(txt.get_text()) in emphasize:
-            txt.set_fontweight('bold')
-    plt.grid(True, alpha=0.3)
-    out_path = f"{out_dir}/World_Order_Graph.png"
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
-    plt.close()
-    return out_path
-
-
-def plot_raw_metric_diagnostics(metrics_df: pd.DataFrame, out_dir: str, countries: Sequence[str] = TARGET_COUNTRIES, smooth_window: int = 5, start_year: int = 1800) -> None:
-    out_root = f"{out_dir}/raw_metrics"
-    ensure_dirs(out_root)
-
-    metric_cols = [
-        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter", "Innovation", "Competitiveness"
+    titles = [
+        "Education",
+        "Competitiveness (Polity)",
+        "Technology/Innovation",
+        "Economic Output Share",
+        "Trade Share",
+        "Military",
+        "Financial Center",
+        "Reserve Currency",
     ]
-    df = _filter_countries(metrics_df, countries)
-    df = df[df["year"] >= start_year]
 
-    for country, sub in df.groupby("country"):
-        sub = sub.sort_values("year")
-        # Dynamic grid size based on metric count
-        n = len(metric_cols)
-        cols = 3
-        rows = (n + cols - 1) // cols
-        fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 3.2 * rows), sharex=True)
-        axes = axes.ravel()
-        for i, m in enumerate(metric_cols):
-            ax = axes[i]
-            if m in sub.columns:
-                # Smooth each metric series before plotting
-                y = rolling_smooth(sub[m], window=smooth_window)
-                ax.plot(sub["year"], y, color="tab:blue")
-                ax.set_title(m)
-                ax.grid(True, alpha=0.3)
-            else:
-                ax.set_title(m)
-                ax.text(0.5, 0.5, "N/A", ha="center", va="center", transform=ax.transAxes)
-                ax.grid(True, alpha=0.3)
-        for j in range(len(metric_cols), len(axes)):
-            axes[j].axis('off')
-        fig.suptitle(f"Raw Metric Diagnostics — {country}")
-        fig.supxlabel("Year")
-        fig.supylabel("Score (0-1)")
-        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        out_path = f"{out_root}/{country}_raw_metrics.png"
-        fig.savefig(out_path, dpi=150)
-        plt.close(fig)
+    sub = df[df["country"] == country]
+    if sub.empty:
+        return
+
+    fig, axes = plt.subplots(2, 4, figsize=(14, 6), sharex=True, sharey=True)
+    axes = axes.ravel()
+    for i, (m, title) in enumerate(zip(metrics, titles)):
+        ax = axes[i]
+        s = sub[["year", m]].dropna()
+        if not s.empty:
+            ax.plot(s["year"], s[m], color="#1f77b4")
+        ax.set_title(title, fontsize=9)
+        ax.set_ylim(0, 1)
+    for ax in axes:
+        ax.set_xlim(sub["year"].min(), sub["year"].max())
+    fig.suptitle(f"Raw Metrics (smoothed): {country}")
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.savefig(outpath, dpi=150)
+    plt.close(fig)
