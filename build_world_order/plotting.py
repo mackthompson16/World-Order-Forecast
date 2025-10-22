@@ -34,10 +34,41 @@ def plot_world_order_composite(
     ensure_dirs(out_dir)
     df = metrics_df.copy()
     metric_cols = [c for c in [
-        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter"
+        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter", "Innovation", "Competitiveness"
     ] if c in df.columns]
 
-    df["Composite"] = df[metric_cols].mean(axis=1, skipna=True)
+    precomputed = "WorldOrderIndex" in df.columns
+    if precomputed:
+        df["Composite"] = df["WorldOrderIndex"]
+    # Create aliases to match requested weighting schema
+    if "Innovation" in df.columns:
+        df["Technology"] = df["Innovation"]
+    if "EconomicIndex" in df.columns:
+        df["EconomicOutput"] = df["EconomicIndex"]
+
+    # Weighted composite with renormalization over available metrics
+    weights = {
+        "Education": 0.15,
+        "Competitiveness": 0.15,
+        "Technology": 0.15,
+        "EconomicOutput": 0.15,
+        "TradeShare": 0.10,
+        "Military": 0.10,
+        "FinancialCenter": 0.10,
+        "ReserveCurrency": 0.10,
+    }
+    # Select available columns from the weighting schema
+    available_cols = [k for k in weights.keys() if k in df.columns]
+    # Weighted sum
+    value_mat = df[available_cols]
+    weight_vec = pd.Series({k: weights[k] for k in available_cols})
+    weighted_sum = (value_mat * weight_vec).sum(axis=1, skipna=True)
+    # Sum of weights present (non-null per row)
+    present_weights = value_mat.notna().astype(float) * weight_vec
+    present_weights = present_weights.sum(axis=1)
+    if not precomputed:
+        df["Composite"] = weighted_sum.divide(present_weights).where(present_weights > 0)
+
     df = _filter_countries(df, countries)
     # Start from requested year threshold
     df = df[df["year"] >= start_year]
@@ -115,14 +146,18 @@ def plot_raw_metric_diagnostics(metrics_df: pd.DataFrame, out_dir: str, countrie
     ensure_dirs(out_root)
 
     metric_cols = [
-        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter"
+        "Education", "Military", "EconomicIndex", "TradeShare", "ReserveCurrency", "FinancialCenter", "Innovation", "Competitiveness"
     ]
     df = _filter_countries(metrics_df, countries)
     df = df[df["year"] >= start_year]
 
     for country, sub in df.groupby("country"):
         sub = sub.sort_values("year")
-        fig, axes = plt.subplots(2, 3, figsize=(12, 6), sharex=True)
+        # Dynamic grid size based on metric count
+        n = len(metric_cols)
+        cols = 3
+        rows = (n + cols - 1) // cols
+        fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 3.2 * rows), sharex=True)
         axes = axes.ravel()
         for i, m in enumerate(metric_cols):
             ax = axes[i]

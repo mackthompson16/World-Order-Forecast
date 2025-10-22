@@ -97,14 +97,14 @@ def compute_data_coverage(edu_path: str, mil_path: str, gmd_path: str) -> pd.Dat
         records.append({"label": "Education", "year": int(y), "countries_available": int(n)})
 
     # Military
-    for c in ["milex", "milper"]:
+    for c in ["milex", "milper", "cinc"]:
         if c in mil.columns:
             cnt = mil.dropna(subset=[c]).groupby("year")["country"].nunique()
             for y, n in cnt.items():
                 records.append({"label": c, "year": int(y), "countries_available": int(n)})
 
     # GMD variables
-    for c in ["rGDP_USD", "exports_USD", "imports_USD", "USDfx", "infl", "CA_GDP", "M2", "govdef_GDP"]:
+    for c in ["rGDP_USD", "exports_USD", "imports_USD", "USDfx", "infl", "CA_GDP", "M2", "govdef_GDP", "cgovdebt"]:
         if c in gmd.columns:
             cnt = gmd.dropna(subset=[c]).groupby("year")["country"].nunique()
             for y, n in cnt.items():
@@ -136,4 +136,3 @@ def plot_data_coverage(coverage_df: pd.DataFrame, out_dir: str, start_year: int 
     plt.savefig(out_path, dpi=150)
     plt.close()
     return out_path
-

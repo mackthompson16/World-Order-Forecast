@@ -52,7 +52,7 @@ def load_military(path: str) -> pd.DataFrame:
     """
     df = pd.read_csv(path)
     # Treat -9 as null for numeric fields
-    numeric_cols = [c for c in ["milex", "milper"] if c in df.columns]
+    numeric_cols = [c for c in ["milex", "milper", "cinc"] if c in df.columns]
     for c in numeric_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce")
         df.loc[df[c] == -9, c] = np.nan
@@ -71,9 +71,10 @@ def load_military(path: str) -> pd.DataFrame:
         "year": pd.to_numeric(df.get("year"), errors="coerce"),
         "milex": df.get("milex"),
         "milper": df.get("milper"),
+        "cinc": df.get("cinc"),
     })
     out = out.dropna(subset=["year"]).sort_values(["country", "year"]).reset_index(drop=True)
-    out = forward_fill_by_group(out, ["country"], ["year"], [c for c in ["milex", "milper"] if c in out.columns])
+    out = forward_fill_by_group(out, ["country"], ["year"], [c for c in ["milex", "milper", "cinc"] if c in out.columns])
     return out
 
 
@@ -100,7 +101,7 @@ def load_gmd(path: str) -> pd.DataFrame:
 
     out_cols = [
         "rGDP_USD", "exports_USD", "imports_USD", "USDfx", "infl",
-        "CA_GDP", "M2", "govdef_GDP",
+        "CA_GDP", "M2", "M3", "govdef_GDP", "cgovdebt_GDP", "cgovdebt", "finv_GDP",
     ]
     # Coerce numeric
     for c in out_cols + ["year"]:
@@ -117,11 +118,93 @@ def load_gmd(path: str) -> pd.DataFrame:
         "infl": df.get("infl"),
         "CA_GDP": df.get("CA_GDP"),
         "M2": df.get("M2"),
+        "M3": df.get("M3"),
         "govdef_GDP": df.get("govdef_GDP"),
+        "cgovdebt_GDP": df.get("cgovdebt_GDP"),
+        "cgovdebt": df.get("cgovdebt"),
+        "finv_GDP": df.get("finv_GDP"),
     })
 
     out = out.dropna(subset=["year"]).sort_values(["country", "year"]).reset_index(drop=True)
     # Forward-fill within country for all relevant columns
     fcols = [c for c in out.columns if c not in ("country", "year")]
     out = forward_fill_by_group(out, ["country"], ["year"], fcols)
+    return out
+
+
+def load_chat(path: str) -> pd.DataFrame:
+    """Load CHAT.csv and return wide DataFrame: country, year, <numeric columns...>.
+
+    - country_name, year are expected columns
+    - All other columns treated as candidate numeric features
+    - Forward-fill within country by year for stability
+    """
+    df = pd.read_csv(path, low_memory=False)
+    # Establish country and year
+    cname_col = None
+    for cand in ["country_name", "country", "Country"]:
+        if cand in df.columns:
+            cname_col = cand
+            break
+    if cname_col is None:
+        raise ValueError("CHAT.csv missing 'country_name' column")
+
+    if "year" not in df.columns:
+        raise ValueError("CHAT.csv missing 'year' column")
+
+    out = df.copy()
+    out["country"] = out[cname_col].astype(str).map(canonical_country)
+    # Clean year: strip thousands separators and coerce; drop out-of-range
+    out["year"] = (
+        out["year"].astype(str).str.replace(",", "", regex=False)
+    )
+    out["year"] = pd.to_numeric(out["year"], errors="coerce")
+    # Guard unrealistic years produced by parsing glitches
+    out.loc[(out["year"] < 1500) | (out["year"] > 2100), "year"] = np.nan
+
+    # Identify numeric feature columns: exclude country/year and any non-feature ids
+    exclude = {cname_col, "country", "year"}
+    feature_cols = [c for c in out.columns if c not in exclude]
+    # Coerce to numeric where possible
+    for c in feature_cols:
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+
+    out = out.dropna(subset=["year"]).sort_values(["country", "year"]).reset_index(drop=True)
+    out = forward_fill_by_group(out, ["country"], ["year"], feature_cols)
+    return out[["country", "year"] + feature_cols]
+
+
+def load_polity(path: str) -> pd.DataFrame:
+    """Load polity.csv and return columns: country, year, polity.
+    Uses 'country' as name, 'eyear' or 'year' if present for the time.
+    """
+    df = pd.read_csv(path, low_memory=False)
+    # Country
+    if "country" in df.columns:
+        countries = df["country"].astype(str)
+    else:
+        for cand in ["country_name", "scode", "p5"]:
+            if cand in df.columns:
+                countries = df[cand].astype(str)
+                break
+        else:
+            countries = pd.Series([None] * len(df))
+
+    # Year selection: polity datasets often store end year (eyear)
+    year_col = "year" if "year" in df.columns else ("eyear" if "eyear" in df.columns else None)
+    if year_col is None:
+        raise ValueError("polity.csv missing 'year' or 'eyear' column")
+
+    # Clean year string then coerce and bound-check
+    year_series = df[year_col].astype(str).str.replace(",", "", regex=False)
+    year_series = pd.to_numeric(year_series, errors="coerce")
+    year_series = year_series.where((year_series >= 1500) & (year_series <= 2100))
+
+    out = pd.DataFrame({
+        "country": countries.map(canonical_country),
+        "year": year_series,
+        "polity": pd.to_numeric(df.get("polity"), errors="coerce"),
+    })
+    out = out.dropna(subset=["year"]).sort_values(["country", "year"]).reset_index(drop=True)
+    # No forward-fill per request; use only observed values
     return out

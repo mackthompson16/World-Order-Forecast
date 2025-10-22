@@ -162,6 +162,50 @@ def min_max_norm_by_year(df: pd.DataFrame, year_col: str, value_col: str, out_co
     return df
 
 
+def robust_min_max_norm_by_year(df: pd.DataFrame, year_col: str, value_col: str, out_col: str) -> pd.DataFrame:
+    """Robust min-max normalize with 5th-95th percentile clipping within each year.
+
+    For each year:
+    - Compute q05, q95 of the series (ignoring NaNs)
+    - Clip to [q05, q95]
+    - Min-max normalize the clipped values
+    - If denom == 0 or insufficient data, return 0.5 for non-null entries
+    """
+    def _robust_norm(s: pd.Series) -> pd.Series:
+        s = s.astype(float)
+        if s.notna().sum() <= 1:
+            return pd.Series([np.nan if pd.isna(x) else 0.5 for x in s], index=s.index)
+        q05, q95 = s.quantile([0.05, 0.95])
+        clipped = s.clip(lower=q05, upper=q95)
+        vmin = clipped.min(skipna=True)
+        vmax = clipped.max(skipna=True)
+        denom = vmax - vmin
+        if not np.isfinite(denom) or denom == 0:
+            return pd.Series([np.nan if pd.isna(x) else 0.5 for x in s], index=s.index)
+        return (clipped - vmin) / denom
+
+    df[out_col] = df.groupby(year_col, dropna=False)[value_col].transform(_robust_norm)
+    return df
+
+
+def group_rolling_mean(df: pd.DataFrame, group_col: str, sort_col: str, value_col: str, out_col: str, window: int = 5) -> pd.DataFrame:
+    df = df.sort_values([group_col, sort_col]).copy()
+    df[out_col] = (
+        df.groupby(group_col, dropna=False)[value_col]
+        .rolling(window=window, min_periods=1).mean().reset_index(level=0, drop=True)
+    )
+    return df
+
+
+def group_rolling_std(df: pd.DataFrame, group_col: str, sort_col: str, value_col: str, out_col: str, window: int = 5) -> pd.DataFrame:
+    df = df.sort_values([group_col, sort_col]).copy()
+    df[out_col] = (
+        df.groupby(group_col, dropna=False)[value_col]
+        .rolling(window=window, min_periods=2).std().reset_index(level=0, drop=True)
+    )
+    return df
+
+
 def share_by_year(df: pd.DataFrame, year_col: str, value_col: str, out_col: str) -> pd.DataFrame:
     """Compute share of `value_col` within each year into `out_col`.
     Guards against zero denominators.

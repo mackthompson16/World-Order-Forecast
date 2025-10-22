@@ -4,7 +4,7 @@ from typing import List
 
 import pandas as pd
 
-from .loaders import load_education, load_military, load_gmd
+from .loaders import load_education, load_military, load_gmd, load_chat, load_polity
 from .metrics import compute_metrics
 from .plotting import plot_world_order_composite, plot_raw_metric_diagnostics, TARGET_COUNTRIES
 from .diagnostics import compute_data_coverage, plot_data_coverage
@@ -22,14 +22,18 @@ def run(selected_countries: List[str] = None) -> None:
     edu_path = os.path.join(DATA_DIR, "Education.csv")
     mil_path = os.path.join(DATA_DIR, "military.csv")
     gmd_path = os.path.join(DATA_DIR, "GMD.csv")
+    chat_path = os.path.join(DATA_DIR, "CHAT.csv")
+    polity_path = os.path.join(DATA_DIR, "polity.csv")
 
     # Load
     edu = load_education(edu_path)
     mil = load_military(mil_path)
     gmd = load_gmd(gmd_path)
+    chat = load_chat(chat_path)
+    pol = load_polity(polity_path)
 
     # Compute metrics
-    metrics_df = compute_metrics(edu, mil, gmd)
+    metrics_df = compute_metrics(edu, mil, gmd, chat, pol)
 
     # Save intermediate (optional, uncomment if needed)
     # ensure_dirs(RESULTS_DIR)
