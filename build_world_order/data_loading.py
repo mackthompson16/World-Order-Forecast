@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .utils import canonical_country, YEAR_MIN, YEAR_MAX
+from .normalize import enforce_min_countries_and_interpolate
 
 
 DataFrames = Dict[str, pd.DataFrame]
@@ -39,6 +40,10 @@ def load_gmd(path: Path) -> pd.DataFrame:
     df = df[present].copy()
     df["year"] = pd.to_numeric(df["year"], errors="coerce")
     df = _clip_years(df)
+    # Pre-supplementation for each value column (exclude CHAT in other loader)
+    for col in ["rGDP_USD", "USDfx", "cgovdebt_GDP", "exports_USD", "imports_USD"]:
+        if col in df.columns:
+            df = enforce_min_countries_and_interpolate(df, col)
     return df
 
 
@@ -61,6 +66,8 @@ def load_education(path: Path) -> pd.DataFrame:
     long["education"] = pd.to_numeric(long["education"], errors="coerce")
     long = long.dropna(subset=["country", "year"]).reset_index(drop=True)
     long = _clip_years(long)
+    # Pre-supplementation: enforce minimum cross-section and interpolate
+    long = enforce_min_countries_and_interpolate(long, "education")
     return long[["country", "year", "education"]]
 
 
@@ -81,6 +88,8 @@ def load_military(path: Path) -> pd.DataFrame:
     df["year"] = pd.to_numeric(df["year"], errors="coerce")
     df["cinc"] = pd.to_numeric(df["cinc"], errors="coerce")
     df = _clip_years(df)
+    # Pre-supplementation on raw CINC before share calculation
+    df = enforce_min_countries_and_interpolate(df, "cinc")
     return df
 
 
@@ -104,13 +113,19 @@ def load_polity(path: Path) -> pd.DataFrame:
     else:
         raise ValueError("polity.csv missing year/eyear")
     df["country"] = df[name_col].map(canonical_country)
-    # Clean polity score and sentinel values (-66, -77, -88)
-    if "polity" not in df.columns:
-        raise ValueError("polity.csv missing 'polity' column")
-    df["polity"] = pd.to_numeric(df["polity"], errors="coerce")
-    df.loc[df["polity"].isin([-66, -77, -88]), "polity"] = np.nan
+    # Clean polity and components; sentinel values (-66, -77, -88) -> NaN
+    for col in ["polity", "democ", "autoc", "xconst", "parcomp"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df.loc[df[col].isin([-66, -77, -88]), col] = np.nan
+        else:
+            # Keep columns optional except 'polity' which older metric used; new metric uses democ/autoc
+            df[col] = np.nan
     df = _clip_years(df)
-    return df[["country", "year", "polity"]]
+    # Pre-supplement xconst/parcomp (used for competitiveness)
+    df = enforce_min_countries_and_interpolate(df, "xconst")
+    df = enforce_min_countries_and_interpolate(df, "parcomp")
+    return df[["country", "year", "polity", "democ", "autoc", "xconst", "parcomp"]]
 
 
 def load_chat(path: Path) -> pd.DataFrame:
@@ -158,4 +173,3 @@ def load_all(data_dir: Path) -> Tuple[DataFrames, pd.DataFrame]:
 
     dfs: DataFrames = {"gmd": gmd, "education": edu, "military": mil, "polity": pol, "chat": chat}
     return dfs, grid
-

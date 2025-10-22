@@ -38,6 +38,8 @@ def main(data_dir: Path, results_dir: Path, smooth_window: int = 5):
         panel[c] = panel.groupby("country")[c].transform(lambda s: s.rolling(smooth_window, center=True, min_periods=1).mean())
         # Re-apply inside-only interpolation to avoid extended edges
         panel[c] = panel.groupby("country")[c].transform(fill_gaps)
+        # Extend last available value forward to 2024 (LOCF)
+        panel[c] = panel.groupby("country")[c].transform(lambda s: s.ffill())
 
     # Compute composite with renormalized weights per-row
     panel = compute_composite(panel)
@@ -74,4 +76,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(args.data_dir, args.out_dir, smooth_window=args.smooth)
-

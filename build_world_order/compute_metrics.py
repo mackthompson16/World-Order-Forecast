@@ -70,7 +70,15 @@ def _compute_innovation(chat: pd.DataFrame) -> pd.DataFrame:
 
 def _compute_competitiveness(polity: pd.DataFrame) -> pd.DataFrame:
     p = polity.copy()
-    p["competitiveness"] = per_year_minmax(p["polity"], p["year"])  # type: ignore[arg-type]
+    # New definition: competitiveness = avg( norm(xconst), norm(parcomp) )
+    p["xconst"] = pd.to_numeric(p.get("xconst"), errors="coerce")
+    p["parcomp"] = pd.to_numeric(p.get("parcomp"), errors="coerce")
+    p["xconst_norm"] = per_year_minmax(p["xconst"], p["year"])  # type: ignore[arg-type]
+    p["parcomp_norm"] = per_year_minmax(p["parcomp"], p["year"])  # type: ignore[arg-type]
+    # Require both present to take the average
+    both = p[["xconst_norm", "parcomp_norm"]].notna().all(axis=1)
+    p.loc[~both, ["xconst_norm", "parcomp_norm"]] = np.nan
+    p["competitiveness"] = p[["xconst_norm", "parcomp_norm"]].mean(axis=1, skipna=False)
     return p[["country", "year", "competitiveness"]]
 
 
@@ -97,7 +105,7 @@ def build_metrics(dfs: Dict[str, pd.DataFrame], grid: pd.DataFrame) -> pd.DataFr
 
     comp = _compute_competitiveness(dfs["polity"])  # per-year norm
 
-    # Merge onto full grid and apply supplementation rules
+    # Merge onto full grid; data supplementation happened pre-normalization in loaders
     out = grid.merge(edu, on=["country", "year"], how="left") \
               .merge(mil_share[["country", "year", "military"]], on=["country", "year"], how="left") \
               .merge(econ_share[["country", "year", "economic_index"]], on=["country", "year"], how="left") \
@@ -105,25 +113,6 @@ def build_metrics(dfs: Dict[str, pd.DataFrame], grid: pd.DataFrame) -> pd.DataFr
               .merge(res_fin, on=["country", "year"], how="left") \
               .merge(innovation, on=["country", "year"], how="left") \
               .merge(comp, on=["country", "year"], how="left")
-
-    metric_cols = [
-        "education",
-        "military",
-        "economic_index",
-        "trade_share",
-        "reserve_currency",
-        "financial_center",
-        "innovation",
-        "competitiveness",
-    ]
-
-    # Supplement missing data per country
-    def _fill_group(g: pd.DataFrame) -> pd.DataFrame:
-        for c in metric_cols:
-            g[c] = fill_gaps(g[c])
-        return g
-
-    out = out.sort_values(["country", "year"]).groupby("country", group_keys=False).apply(_fill_group)
     return out
 
 
@@ -153,4 +142,3 @@ def compute_composite(panel: pd.DataFrame) -> pd.DataFrame:
     norm_w = present_weight.div(weight_sum, axis=0).fillna(0.0)
     df["WorldOrderIndex"] = (df[cols] * norm_w).sum(axis=1)
     return df
-
