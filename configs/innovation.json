@@ -1,0 +1,22 @@
+{
+  "include_columns": [
+    "internetuser",
+    "computer",
+    "cellphone",
+    "creditdebit",
+    "eft",
+    "telephone",
+    "tv",
+    "med_mriunit",
+    "med_catscanner",
+    "vehicle_car",
+    "vehicle_com"
+  ],
+  "treat_as_rate": [
+    "internetuser"
+  ],
+  "min_coverage": 15,
+  "use_per_capita": true,
+  "log1p_on_counts": true,
+  "weights": {}
+}
