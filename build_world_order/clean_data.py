@@ -9,7 +9,7 @@ from .data_loading import (
     load_education,
     load_military,
     load_polity,
-    load_chat,
+    load_chat_strict,
 )
 from .utils import interpolate_panel
 
@@ -71,9 +71,29 @@ def build_clean_data(data_dir: Path, overwrite: bool = False) -> Path:
     ]
     base = interpolate_panel(base, ["ISO3"], value_cols)
 
-    # Keep only rows that have at least one datapoint among the value_cols
-    has_any = base[value_cols].notna().any(axis=1)
-    base = base.loc[has_any].copy()
+    # Drop rows beyond year 2025
+    if "year" in base.columns:
+        base = base[base["year"] <= 2025].copy()
+
+    # Keep only rows that have at least 4 available core metrics
+    # Core metrics used for downstream calculations (exclude helper columns like pop, USDfx)
+    core_cols = [
+        c for c in [
+            "rGDP_USD",
+            "cgovdebt_GDP",
+            "exports_USD",
+            "imports_USD",
+            "M0",
+            "finv_GDP",
+            "CA_USD",
+            "education",
+            "CINC",
+            "xconst",
+            "parcomp",
+        ] if c in base.columns
+    ]
+    if core_cols:
+        base = base.loc[base[core_cols].notna().sum(axis=1) >= 4].copy()
 
     # Reorder columns
     ordered = [
@@ -103,7 +123,7 @@ def interpolate_chat_inplace(data_dir: Path) -> Path:
     data_dir = Path(data_dir)
     chat_path = data_dir / "CHAT.csv"
     ref, _ = load_country_reference(data_dir)
-    chat = load_chat(data_dir, ref)
+    chat = load_chat_strict(data_dir, ref)
 
     # Accept files with or without country_name; always require ISO3 and year
     present_id = [c for c in ["ISO3", "country_name", "year"] if c in chat.columns]

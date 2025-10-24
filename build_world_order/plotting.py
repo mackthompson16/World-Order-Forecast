@@ -85,6 +85,14 @@ def plot_composite(
     return out_path
 
 
+def _composite_column(df: pd.DataFrame) -> str | None:
+    if "WorldOrderIndex" in df.columns:
+        return "WorldOrderIndex"
+    if "INDEX" in df.columns:
+        return "INDEX"
+    return None
+
+
 def plot_metrics_grid(metrics: pd.DataFrame, out_dir: Path, smooth: int = 5, top_n: int = 25) -> Path:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -92,10 +100,20 @@ def plot_metrics_grid(metrics: pd.DataFrame, out_dir: Path, smooth: int = 5, top
     if not cols:
         return out_dir / "metrics_grid.png"
 
-    # Pick top N countries by count of non-null metrics
-    metrics["non_null"] = metrics[cols].notna().sum(axis=1)
-    counts = metrics.groupby(["ISO3", "country_name"])['non_null'].sum().sort_values(ascending=False)
-    top = counts.head(top_n).reset_index()[["ISO3", "country_name"]]
+    # Pick top N countries by composite coverage (non-null INDEX/WorldOrderIndex rows)
+    comp_col = _composite_column(metrics)
+    if comp_col is not None:
+        counts = (
+            metrics.groupby(["ISO3", "country_name"])[comp_col]
+            .apply(lambda s: s.notna().sum())
+            .sort_values(ascending=False)
+        )
+        top = counts.head(top_n).reset_index()[["ISO3", "country_name"]]
+    else:
+        # Fallback to previous component-based coverage if composite missing
+        metrics["non_null"] = metrics[cols].notna().sum(axis=1)
+        counts = metrics.groupby(["ISO3", "country_name"])['non_null'].sum().sort_values(ascending=False)
+        top = counts.head(top_n).reset_index()[["ISO3", "country_name"]]
     top_set = set(top["ISO3"].tolist())
 
     # Grid 4x2
@@ -139,15 +157,26 @@ def plot_top25_country_grids(metrics: pd.DataFrame, out_dir: Path, smooth: int =
     if not cols:
         return out_dir
 
-    # Rank countries by total count of available metric entries (across all 8 metrics and years)
-    metrics["non_null"] = metrics[cols].notna().sum(axis=1)
-    cover = (
-        metrics.groupby(["ISO3", "country_name"])['non_null']
-        .sum()
-        .sort_values(ascending=False)
-        .head(top_n)
-        .reset_index()[["ISO3", "country_name"]]
-    )
+    # Rank countries by composite coverage (non-null INDEX/WorldOrderIndex rows)
+    comp_col = _composite_column(metrics)
+    if comp_col is not None:
+        cover = (
+            metrics.groupby(["ISO3", "country_name"])  # type: ignore[list-item]
+            [comp_col]
+            .apply(lambda s: s.notna().sum())
+            .sort_values(ascending=False)
+            .head(top_n)
+            .reset_index()[["ISO3", "country_name"]]
+        )
+    else:
+        metrics["non_null"] = metrics[cols].notna().sum(axis=1)
+        cover = (
+            metrics.groupby(["ISO3", "country_name"])['non_null']
+            .sum()
+            .sort_values(ascending=False)
+            .head(top_n)
+            .reset_index()[["ISO3", "country_name"]]
+        )
 
     for _, row in cover.iterrows():
         iso3 = row["ISO3"]

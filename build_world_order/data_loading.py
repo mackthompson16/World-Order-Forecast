@@ -8,31 +8,9 @@ def _canonicalize_country_names(df: pd.DataFrame, name_col: str) -> pd.DataFrame
     df[name_col] = (
         df[name_col]
         .astype(str)
-        .str.strip()
-        .str.upper()
         .str.replace("\u00A0", " ", regex=False)
+        .str.strip()
     )
-    # Common aliases
-    replacements = {
-        "UNITED STATES": "UNITED STATES OF AMERICA",
-        "USA": "UNITED STATES OF AMERICA",
-        "US": "UNITED STATES OF AMERICA",
-        "U.S.": "UNITED STATES OF AMERICA",
-        "U.S.A.": "UNITED STATES OF AMERICA",
-        "UK": "UNITED KINGDOM",
-        "RUSSIA": "RUSSIAN FEDERATION",
-        "IRAN": "IRAN (ISLAMIC REPUBLIC OF)",
-        "SOUTH KOREA": "KOREA, REPUBLIC OF",
-        "NORTH KOREA": "KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF",
-        "CZECHIA": "CZECH REPUBLIC",
-        "BOLIVIA": "BOLIVIA, PLURINATIONAL STATE OF",
-        "VENEZUELA": "VENEZUELA, BOLIVARIAN REPUBLIC OF",
-        "SYRIA": "SYRIAN ARAB REPUBLIC",
-        "LAOS": "LAO PEOPLE'S DEMOCRATIC REPUBLIC",
-        "MOLDOVA": "MOLDOVA, REPUBLIC OF",
-        "CONGO": "CONGO",
-    }
-    df[name_col] = df[name_col].replace(replacements)
     return df
 
 
@@ -52,12 +30,13 @@ def build_country_id(data_dir: Path) -> Path:
     cn = _canonicalize_country_names(cn, "name")
 
     cow = pd.read_csv(data_dir / "cow2iso.csv")
-    cow = cow.rename(columns={"cow_id": "COW", "iso_id": "code_iso"})
+    cow = cow.rename(columns={"cow_id": "COW", "iso3": "iso3"})
     cow["COW"] = pd.to_numeric(cow["COW"], errors="coerce").astype("Int64")
-    cow["code_iso"] = pd.to_numeric(cow["code_iso"], errors="coerce").astype("Int64")
+    # Normalize iso3 for join
+    cow["iso3"] = cow["iso3"].astype(str).str.upper()
 
-    # Join on numeric ISO numeric code
-    id_df = cn.merge(cow[["COW", "code_iso"]], left_on="code", right_on="code_iso", how="left")
+    # Prefer join on ISO3 for robust mapping; keep numeric ISO code from country_names
+    id_df = cn.merge(cow[["iso3", "COW"]], left_on="abv", right_on="iso3", how="left")
     id_df = id_df[["name", "abv", "code", "COW"]].drop_duplicates()
 
     out_path = data_dir / "country_id.csv"
@@ -117,9 +96,11 @@ def load_education(data_dir: Path, country_id: pd.DataFrame) -> pd.DataFrame:
     edu_long = edu.melt(id_vars=["CODE", "country_name"], value_vars=year_cols, var_name="year", value_name="education")
     edu_long["year"] = pd.to_numeric(edu_long["year"], errors="coerce")
     edu_long["CODE"] = pd.to_numeric(edu_long["CODE"], errors="coerce").astype("Int64")
-    # Map CODE->abv via country_id
-    code_to_abv = dict(country_id[["code", "abv"]].dropna().values)
-    edu_long["ISO3"] = edu_long["CODE"].map(code_to_abv)
+    # Map CODE->abv via merge to avoid dtype/key issues
+    ref = country_id[["code", "abv"]].dropna().copy()
+    ref["code"] = pd.to_numeric(ref["code"], errors="coerce").astype("Int64")
+    edu_long = edu_long.merge(ref, left_on="CODE", right_on="code", how="left")
+    edu_long = edu_long.rename(columns={"abv": "ISO3"})
     edu_long = edu_long.dropna(subset=["ISO3", "year"]).copy()
     return edu_long[["ISO3", "country_name", "year", "education"]]
 
@@ -129,8 +110,9 @@ def load_military(data_dir: Path, country_id: pd.DataFrame) -> pd.DataFrame:
     mil = pd.read_csv(data_dir / "military.csv")
     mil = mil.rename(columns={"country": "country_name", "cinc": "CINC", "year": "year", "ccode": "COW"})
     mil["COW"] = pd.to_numeric(mil["COW"], errors="coerce").astype("Int64")
-    cow_to_abv = dict(country_id[["COW", "abv"]].dropna().values)
-    mil["ISO3"] = mil["COW"].map(cow_to_abv)
+    ref = country_id[["COW", "abv"]].dropna().copy()
+    ref["COW"] = pd.to_numeric(ref["COW"], errors="coerce").astype("Int64")
+    mil = mil.merge(ref, on="COW", how="left").rename(columns={"abv": "ISO3"})
     mil = mil.dropna(subset=["ISO3", "year"]).copy()
     return mil[["ISO3", "country_name", "year", "CINC"]]
 
@@ -140,8 +122,9 @@ def load_polity(data_dir: Path, country_id: pd.DataFrame) -> pd.DataFrame:
     pol = pd.read_csv(data_dir / "polity.csv")
     pol = pol.rename(columns={"country": "country_name", "ccode": "COW"})
     pol["COW"] = pd.to_numeric(pol["COW"], errors="coerce").astype("Int64")
-    cow_to_abv = dict(country_id[["COW", "abv"]].dropna().values)
-    pol["ISO3"] = pol["COW"].map(cow_to_abv)
+    ref = country_id[["COW", "abv"]].dropna().copy()
+    ref["COW"] = pd.to_numeric(ref["COW"], errors="coerce").astype("Int64")
+    pol = pol.merge(ref, on="COW", how="left").rename(columns={"abv": "ISO3"})
     use_cols = [c for c in ["ISO3", "country_name", "year", "xconst", "parcomp"] if c in pol.columns]
     pol = pol[use_cols].copy()
     pol["year"] = pd.to_numeric(pol["year"], errors="coerce")
@@ -173,6 +156,31 @@ def load_chat(data_dir: Path, country_id: pd.DataFrame) -> pd.DataFrame:
         chat["ISO3"] = chat["ISO3"].astype(str).str.upper()
     else:
         # No way to map — return empty frame with expected columns
+        return pd.DataFrame(columns=["ISO3", "country_name", "year"])
+
+    chat["year"] = pd.to_numeric(chat.get("year"), errors="coerce")
+    chat = chat.dropna(subset=["ISO3", "year"]).copy()
+    return chat
+
+
+def load_chat_strict(data_dir: Path, country_id: pd.DataFrame) -> pd.DataFrame:
+    """Strict CHAT loader:
+    - If ISO3 present, use it (uppercased).
+    - Else map country_name to ISO3 via country_id.csv with case-insensitive exact matching.
+    - No hardcoded alias tables or fuzzy prefix matching.
+    """
+    chat = pd.read_csv(data_dir / "CHAT.csv")
+    if "ISO3" in chat.columns:
+        chat["ISO3"] = chat["ISO3"].astype(str).str.upper()
+    elif "country_name" in chat.columns:
+        # Normalize whitespace only
+        chat = _canonicalize_country_names(chat, "country_name")
+        ref = _canonicalize_country_names(country_id.copy(), "name")
+        key_chat = chat["country_name"].astype(str).str.upper()
+        key_ref = ref["name"].astype(str).str.upper()
+        name_to_abv = {n: a for n, a in zip(key_ref, ref["abv"])}
+        chat["ISO3"] = key_chat.map(name_to_abv)
+    else:
         return pd.DataFrame(columns=["ISO3", "country_name", "year"])
 
     chat["year"] = pd.to_numeric(chat.get("year"), errors="coerce")

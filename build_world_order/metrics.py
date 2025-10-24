@@ -11,6 +11,24 @@ from .composite import compute_composite
 METRIC_COLS = ["EDU", "MIL", "ECON", "TRAD", "RESV", "FIN", "INV", "CMPT"]
 
 
+# Alias matching requested helper name
+per_year_minmax = yearwise_min_max_norm
+
+
+def _compute_innovation(chat: pd.DataFrame) -> pd.DataFrame:
+    df = chat.copy()
+    feature_cols: List[str] = [c for c in df.columns if c not in ("country", "year")]
+    # Coerce features to numeric to avoid string arithmetic
+    for c in feature_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # Normalize each feature per year, then sum and normalize the sum per year
+    for c in feature_cols:
+        df[c] = per_year_minmax(df[c], df["year"])  # type: ignore[arg-type]
+    df["_sum_norm"] = df[feature_cols].sum(axis=1, skipna=True)
+    df["innovation"] = per_year_minmax(df["_sum_norm"], df["year"])  # type: ignore[arg-type]
+    return df[["country", "year", "innovation"]]
+
+
 def _load_innovation_config() -> Dict[str, Any]:
     """Load configs/innovation.json if present; else return sensible defaults."""
     defaults = {
@@ -103,62 +121,13 @@ def compute_metrics(clean_path: Path, chat_path: Path) -> pd.DataFrame:
         fdf["FIN"] = 0.5 * fdf.get("_NM0") + 0.3 * fdf.get("_NFINV") + 0.2 * (1 - fdf.get("_NDEBT"))
         parts.append(fdf[["ISO3", "year", "FIN"]])
 
-    # Innovation (Technology)
-    cfg = _load_innovation_config()
-    chat_cols_all = [c for c in chat.columns if c not in ("ISO3", "country_name", "year")]
-    choose = [c for c in cfg.get("include_columns", []) if c in chat_cols_all]
-    chat_cols = choose if choose else chat_cols_all
-    if chat_cols:
-        chat_num = chat[["ISO3", "year"] + chat_cols].copy()
-        for col in chat_cols:
-            chat_num[col] = pd.to_numeric(chat_num[col], errors="coerce")
-        chat_num = chat_num.groupby(["ISO3", "year"], as_index=False).mean(numeric_only=True)
-        # Drop rows where no tech data exists
-        has_any = chat_num[chat_cols].notna().any(axis=1)
-        chat_num = chat_num.loc[has_any].copy()
-        method = str(cfg.get("method", "sum_then_norm")).lower()
-        if method == "sum_then_norm":
-            # Sum available tech values per country-year, then min-max normalize the sums by year.
-            sums = chat_num[["ISO3", "year"]].copy()
-            sums["tech_sum"] = chat_num[chat_cols].sum(axis=1, skipna=True)
-            # If all techs were NaN for a row, drop it
-            sums = sums[~sums["tech_sum"].isna()].copy()
-            inv = []
-            for y, g in sums.groupby("year"):
-                vals = g["tech_sum"].dropna()
-                if len(vals) < 4:
-                    # too few countries to normalize reliably
-                    part = pd.DataFrame({"ISO3": g["ISO3"], "year": g["year"], "INV": np.nan})
-                else:
-                    vmin, vmax = vals.min(), vals.max()
-                    if vmin == vmax:
-                        part = pd.DataFrame({"ISO3": g["ISO3"], "year": g["year"], "INV": np.nan})
-                    else:
-                        part = pd.DataFrame({
-                            "ISO3": g["ISO3"],
-                            "year": g["year"],
-                            "INV": (g["tech_sum"] - vmin) / (vmax - vmin)
-                        })
-                inv.append(part)
-            inv_df = pd.concat(inv, ignore_index=True)
-            parts.append(inv_df[["ISO3", "year", "INV"]])
-        else:
-            # Fallback to per-tech min-max then mean
-            normed = chat_num[["ISO3", "year"]].copy()
-            min_cov = 10
-            for col in chat_cols:
-                out = pd.Series(np.nan, index=chat_num.index, dtype=float)
-                for y, g in chat_num[["year", col]].groupby("year"):
-                    vals = g[col].dropna()
-                    if len(vals) < max(2, min_cov):
-                        continue
-                    vmin, vmax = vals.min(), vals.max()
-                    if pd.isna(vmin) or pd.isna(vmax) or vmax == vmin:
-                        continue
-                    out.loc[g.index] = (g[col] - vmin) / (vmax - vmin)
-                normed[col] = out.values
-            normed["INV"] = normed[chat_cols].mean(axis=1)
-            parts.append(normed[["ISO3", "year", "INV"]])
+    # Innovation (Technology) - simplified per request
+    if not chat.empty:
+        chat_use = chat.copy()
+        chat_use = chat_use.rename(columns={"ISO3": "country"})
+        inv_df = _compute_innovation(chat_use)
+        inv_df = inv_df.rename(columns={"country": "ISO3", "innovation": "INV"})
+        parts.append(inv_df[["ISO3", "year", "INV"]])
 
     # Competitiveness: average of normalized xconst and parcomp
     comp_parts = []
