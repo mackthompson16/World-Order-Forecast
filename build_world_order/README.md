@@ -16,6 +16,11 @@
 - polity.csv: [CCODE = COW: xconst, parcomp]
 - CHAT.csv: [iso3 = ABV: all columns]
 
+### Load Geography
+- load all from /geography_data
+- shchema is always: "Country Name","Country Code","Indicator Name","Indicator Code", year...n
+- country code = abv
+
 ## Clean data
 - Build `data/clean_data.csv` with the above data
 - For each datapoint listed above excluding chat.csv
@@ -26,15 +31,27 @@
       finv_GDP, CA_USD, education, CINC,
       xconst, parcomp]
   - each row is a country-year
-    - each country only needs a row for years it has atleast 1 data point
+    - each row needs 4 metrics to be included in the clean_Data.csb
+    - if year > 2025 do not include (some include projections)
   - pass and linear interpolate between first and last point
 - Interpolate chat.csv file
 - Use `clean_data.csv` and `CHAT.csv` for the remaining steps.
-- no need to clean every run
+- no need to clean every 
+
+### Clean geography: 
+- Build clean_geography.csv
+  - includes [Country, abv, [indicator from each dataset], index] by year [1800: 2024]
+- Linear interpolate all data 
+- Take Ag_land /= land_Area and forest_Area /= land_Area (%)
+- Fill to 1800 - 2024 (forward and back):
+  - Static forward/backfill land_area
+  - Linear Regression on the rest
+- Take norm() for all
+- index = avg(indicators)
 
 ## Metrics
 - Metrics.csv will include all countries & their calculate metrics (for training)
-  - [EDU, MIL, ECON,TRAD, RESV, FIN, INV, CMPT, INDEX]
+  - [EDU, MIL, ECON,TRAD, RESV, FIN, INV, CMPT, INDEX, GEOGRAPHY]
 - Do not include country-years that have no data (for sparsity)
 - Metrics that require multiple sources must have all available to be non-null
 - Forward-fill last available metric to 2024, max ten years.
@@ -55,6 +72,7 @@
   - FinancialCenter = 0.5*norm(M0)+ 0.3*norm(finv_GDP) + 0.2*( 1 − norm(cgovdebt_GDP))
   - Innovation = avg([norm(col) for col in chat.csv])
   - Competitiveness = avg(norm(xconst), norm(parcomp))
+  
 #### Composite Index
 - WorldOrderIndex[c,y] =
   0.15*Education + 0.15*Competitiveness + 0.15*Technology +

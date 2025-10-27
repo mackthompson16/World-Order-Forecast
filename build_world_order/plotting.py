@@ -210,3 +210,54 @@ def plot_top25_country_grids(metrics: pd.DataFrame, out_dir: Path, smooth: int =
         plt.close(fig)
 
     return out_dir
+
+
+def plot_geography_index(geo: pd.DataFrame, out_dir: Path, smooth: int = 5) -> Path:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Expect columns: Country, abv, year, ..., index
+    cols_needed = {"abv", "year", "index"}
+    if not cols_needed.issubset(set(geo.columns)):
+        return out_dir / "geography_index.png"
+
+    df = geo.copy()
+    df = df.rename(columns={"abv": "ISO3", "index": "GeoIndex"})
+    # Bound year range
+    df = df[(df["year"] >= 1800) & (df["year"] <= 2024)]
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(10, 6))
+    _shade_wars(ax)
+
+    # y-limits
+    if df["GeoIndex"].notna().any():
+        ymin, ymax = float(df["GeoIndex"].min()), float(df["GeoIndex"].max())
+        ax.set_ylim(max(-0.05, ymin), min(1.05, ymax))
+
+    for iso3, g in df.groupby("ISO3"):
+        g = g.sort_values("year")
+        s = g["GeoIndex"].reset_index(drop=True)
+        y = moving_average(s, smooth)
+        x = g["year"].values
+        style = {"color": "#888888", "lw": 1.2, "alpha": 0.6}
+        if iso3 in HIGHLIGHT:
+            style.update(HIGHLIGHT[iso3])
+        else:
+            style.update({"linestyle": ":", "alpha": 0.35})
+        ax.plot(x, y, label=iso3, **style)
+
+    ax.set_xlim(1800, 2024)
+    ax.set_title("Geography Index (Smoothed)")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Geography Index (0-1)")
+    # Legend: show highlighted only
+    handles, labels = ax.get_legend_handles_labels()
+    show = [i for i, lab in enumerate(labels) if lab in set(HIGHLIGHT.keys())]
+    if show:
+        ax.legend([handles[i] for i in show], [labels[i] for i in show], loc="best")
+    fig.tight_layout()
+    out_path = out_dir / "geography_index.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path

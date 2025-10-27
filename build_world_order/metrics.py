@@ -29,33 +29,6 @@ def _compute_innovation(chat: pd.DataFrame) -> pd.DataFrame:
     return df[["country", "year", "innovation"]]
 
 
-def _load_innovation_config() -> Dict[str, Any]:
-    """Load configs/innovation.json if present; else return sensible defaults."""
-    defaults = {
-        "include_columns": [
-            "internetuser", "computer", "cellphone", "creditdebit", "eft",
-            "telephone", "tv", "med_mriunit", "med_catscanner",
-            "vehicle_car", "vehicle_com"
-        ],
-        "treat_as_rate": ["internetuser"],
-        "min_coverage": 15,
-        "use_per_capita": True,
-        "log1p_on_counts": True,
-        "weights": {},
-        "method": "sum_then_norm"  # or "avg_norm"
-    }
-    cfg_path = Path(__file__).resolve().parents[1] / "configs" / "innovation.json"
-    try:
-        if cfg_path.exists():
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                user_cfg = json.load(f)
-            # update defaults shallowly
-            for k, v in user_cfg.items():
-                defaults[k] = v
-    except Exception:
-        pass
-    return defaults
-
 
 def compute_metrics(clean_path: Path, chat_path: Path) -> pd.DataFrame:
     clean = pd.read_csv(clean_path)
@@ -197,10 +170,23 @@ def write_metrics(clean_path: Path, chat_path: Path, out_path: Path) -> Path:
         metrics = metrics.rename(columns={"WorldOrderIndex": "INDEX"})
         # Interpolate INDEX inside gaps too (after adding it)
         metrics = interpolate_panel(metrics, ["ISO3"], ["INDEX"]) if "INDEX" in metrics.columns else metrics
+
+    # Merge geography index if available (do not change row coverage)
+    try:
+        geo_path = Path(clean_path).parent / "clean_geography.csv"
+        if geo_path.exists():
+            geo = pd.read_csv(geo_path)
+            # Expect columns: Country, abv, year, ..., index
+            if set(["abv", "year"]).issubset(geo.columns) and "index" in geo.columns:
+                geo_use = geo[["abv", "year", "index"]].rename(columns={"abv": "ISO3", "index": "geography_index"})
+                metrics = metrics.merge(geo_use, on=["ISO3", "year"], how="left")
+    except Exception:
+        # Non-fatal if geography data missing or malformed
+        pass
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Order columns
-    cols = ["country_name", "ISO3", "year"] + METRIC_COLS + ["INDEX"]
+    cols = ["country_name", "ISO3", "year"] + METRIC_COLS + ["INDEX", "geography_index"]
     cols = [c for c in cols if c in metrics.columns]
     metrics[cols].to_csv(out_path, index=False)
     return out_path

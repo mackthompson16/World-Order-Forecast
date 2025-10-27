@@ -37,82 +37,29 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 ![Empire Composite Standing — Top 5 by Average](build_world_order/results/composite.png)
 ## Ray's Graph
 ![Ray Dalio's - Target Graph](image.png)
-## What’s shown (current methodology)
-- Metrics integrated: GDP, Global Debt, Military Strength, Innovation, Education, Competitiveness, and a derived ReservePower from IMF COFER
-- Per‑year min–max per metric: yearly min → 0, yearly max → 1; metrics averaged per country/year over available values only (missing coded as −1 and excluded).
-- Quality gates: a country‑year must have GDP present and at least 3 metrics to be included. The x‑axis starts at the first year where those conditions hold.
-- Ranking: Top 5 countries by average composite over the valid window (not total area), then plotted as lines.
 
+## Training Data
 
-## Data
+- Located in build_world_order/results/metrics.csv
+    -   [country_name,ISO3,year,EDU,MIL,ECON,TRAD,RESV,FIN,INV,CMPT,INDEX,geography_index]
+- Each Country ranges between 1800 - 2024
+- It will be Trained when there are atleast 4 available metrics
+    - Further explanation of assembley in the folder's readme
+    - Each country-year includes a geography index, which scores optimism;
+        - Expected Future Growth=f(Xt​)+β⋅geography 
+# Training
 
-### Public Data for Empires (Countries)
-| Metric | Source | Range | Description |
-|--------|--------|-------|-------------|
-| Global Debt | World Bank WDI | 2000-2023 | Government debt as % of GDP |
-| Military Strength | SIPRI | 2000-2023 | Military expenditure as % of GDP |
-| GDP & Trade | World Bank WDI | 2000-2023 | GDP per capita and trade as % of GDP |
-| Reserve Currency | IMF COFER | 2000-2023 | Currency share in global foreign exchange reserves |
-| Education | World Bank WDI | 2000-2023 | Average years of schooling (population 25+) |
-| Innovation | WIPO | 2000-2023 | Patent applications per million population |
-| Competitiveness | WEF | 2000-2023 | Global Competitiveness Index (0-100 scale) |
-| Financial Centers | GFCI | 2000-2023 | Financial center development index |
-
-### Public Data for Companies (Industries)
-| Metric | Source | Range | Description |
-|--------|--------|-------|-------------|
-| Market Capitalization | Yahoo Finance/Bloomberg | 2000-2023 | Total market value by industry sector |
-| R&D Spending | OECD STAN | 2000-2023 | Research & development expenditure by industry |
-| Revenue Growth | SEC Filings/Annual Reports | 2000-2023 | Year-over-year revenue growth by sector |
-| Employment Share | Bureau of Labor Statistics | 2000-2023 | Employment as % of total workforce |
-| Patent Filings | USPTO/WIPO | 2000-2023 | Patent applications by industry classification |
-| Global Trade Share | UN Comtrade | 2000-2023 | Export/import volumes by industry |
-| Energy Consumption | IEA | 2000-2023 | Energy usage by industrial sector |
-| Productivity Index | OECD | 2000-2023 | Labor productivity by industry |
+- If a country has < 100 years of valid data, exclude.
+    - Also exclude the validation candidate, currently denmark
+- rolling windows of length=50 (past) → forecast horizon=30 (future).
+- Use the last known geography_index in the input window
+    - Add β·geography as an additive bias to the output head
+- Temporal ConvNet (1D Conv over time) on the K channels.
+- Output a 30-step forecast for each target metric
+- Build a boolean mask (K,50) for inputs; use masked loss.
+- Only generate loss on targets actually present in the 30y horizon.
 
 ## Validation Strategy & Exclusions
 
-For model validation using the leave-one-out approach, we need to avoid **biased candidates** that are either too stable (like Switzerland/Utilities) or too volatile. Instead, we should select entities with **average volatility and predictability** for unbiased validation.
-
-Select countries and industries that are:
-- **Moderately volatile** (not too stable, not too erratic)
-- **Average predictability** (some trend but not perfectly predictable)
-- **Representative** of typical economic behavior
-- **Sufficient data** (15+ years of observations)
-
-## Constants
-
-### Corruption Constant: Data Trustworthiness
-
-The corruption constant models the **reliability and trustworthiness** of economic data based on institutional corruption levels. This addresses the critical issue that countries with high corruption often manipulate or restrict access to economic statistics.
-
-**Gradient Trust Impact**:
-- **High corruption** → Lower learning rate (be more conservative with updates)
-- **Low corruption** → Higher learning rate (trust gradients more, learn faster)
-- **Data manipulation detection** → Model adjusts learning rate based on data reliability
-
-### Geography Constant: Optimistic Curves
-
-The geography constant creates **optimistic curves** for countries with natural geographic advantages, reflecting how location, resources, and terrain influence long-term economic potential.
-
-#### Calculation Method
-
-**Geography Advantages** (multiplicative effects):
-- **Island Advantage** (1.15x): Natural defense, trade advantages (UK, Japan, Australia, New Zealand)
-- **Coastal Access** (1.10x): Maritime trade, resource access (USA, France, Italy, Spain)
-- **Strategic Location** (1.05x): Geographic strategic importance (Germany, Turkey, Egypt)
-- **Resource Rich** (1.08x): Natural resource abundance (USA, Russia, Saudi Arabia, Brazil)
-- **Landlocked** (0.90x): Limited trade routes, dependency (Switzerland, Austria, Czech Republic)
-- **Arctic Challenges** (0.85x): Harsh climate, infrastructure costs (Norway, Sweden, Finland, Canada)
-- **Desert Limitations** (0.88x): Water scarcity, agricultural challenges (Saudi Arabia, UAE, Egypt)
-- **Mountain Barriers** (0.92x): Transportation difficulties (Switzerland, Austria, Afghanistan)
-
-**Combined Geography Score**:
-```
-Geography Multiplier = ∏(Individual Geography Effects)
-Final Multiplier = min(1.5, max(0.5, Geography Multiplier))
-Adjusted Trend = Base Trend × Geography Multiplier
-```
-
-🌐 **[Live Demo & Documentation](https://mackthompson16.github.io/World-Order-Forecast)**
-
+- Current candidate to exclude: denmark
+    - relatively stable, not too stable. 
