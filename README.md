@@ -14,21 +14,6 @@ To test this, I divide the data into two domains:
 - Empires (Countries): measured across eight structural dimensions such as debt, military strength, education, innovation, and reserve currency status.
 - Companies (Industries): measured across parallel dimensions such as market capitalization, R&D spending, revenue growth, employment share, and global market share.
 
-Additional constants are layered into the models to account for corruption (data trustworthiness) and geography (structural advantages or constraints like natural resources, trade access, and climate). These are treated not as predictors of year-to-year variance, but as underlying priors that shape long-term trajectories.
-
-From this foundation, I train three experimental models:
-
-1) World Order Forecast (WOF): projecting the relative standing of nations.
-2) Market Share Forecast (MSF): projecting industry and corporate dominance.
-3) MSF Diluted from WOF: combining the two perspectives to test whether national and corporate cycles reinforce or diverge from one another.
-
-### Validation Philosophy
-
-To measure accuracy, the models use a leave-one-out cross-validation strategy: excluding one country or industry from training, then testing predictions against its historical trajectory. Instead of cherry-picking predictable cases (which would inflate accuracy), the focus is on average predictability—candidates with moderate volatility and representative dynamics.
-
-Still, all forecasts remain provisional. Global events are interdependent, and any model trained on past data necessarily inherits both its scope and its blind spots. This highlights a larger truth:
-***predictive models can never know the future, but they can help uncover the structures and cycles that shape it.***
-
 ## Background
 
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
