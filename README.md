@@ -1,6 +1,9 @@
 # Deep Learning to predict the future
 
-## Project under construction....
+## Status: Empire Forecast model is (almost) 60% accuracy
+ - Will move on to markets once I get to 70%
+# Current forecast
+![Empire Composite Standing - Projected 30 years](build_world_order/results/projection_2054.png)
 This repository explores whether nations and corporations follow similar rise-and-fall dynamics, and whether machine learning can project these trajectories into the future. By combining public socio-economic datasets with deep learning architectures, the project attempts to generate ten-year forecasts of both empires (countries) and companies (industries).
 
 At the core is a simple but provocative research question:
@@ -32,12 +35,11 @@ I was first introduced to this idea reading Ray Dalio's compelling piece, [Princ
 
 His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
 
-# Reconstruction of Ray's Graph
-![Empire Composite Standing — Top 5 by Average](build_world_order/results/composite.png)
 # Data coverage
 ![Metric Distrubution grid](build_world_order/results/metrics_grid.png)
-
+![Metric Distrubution grid](build_world_order/results/geography_index.png)
 - Further explanation of assembley in the folder's readme
+- Need to get more financial / Currency data (mostly privatized)
 ## Training Data
 
 - Located in build_world_order/results/metrics.csv
@@ -60,7 +62,7 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 - Only generate loss on targets actually present in the 30y horizon.
 
 ## Validation Strategy
-
+![Empire Composite Standing - Projected 30 years](build_world_order/results/trajectory_dnk_index_spaghetti.png)
 - Current candidate to exclude: denmark
-    - relatively stable, not too stable
 - walk forward, regression based evaluation
+- Percent of deltas with correct sign at each year gives the final accuracy
