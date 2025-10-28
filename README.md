@@ -32,26 +32,26 @@ I was first introduced to this idea reading Ray Dalio's compelling piece, [Princ
 
 His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
 
-# Reconstruction of Ray's Graph Progress
-## Need to pull from more sources to get a bigger picture
+# Reconstruction of Ray's Graph
 ![Empire Composite Standing — Top 5 by Average](build_world_order/results/composite.png)
-## Ray's Graph
-![Ray Dalio's - Target Graph](image.png)
+# Data coverage
+![Metric Distrubution grid](build_world_order/results/metrics_grid.png)
 
+- Further explanation of assembley in the folder's readme
 ## Training Data
 
 - Located in build_world_order/results/metrics.csv
     -   [country_name,ISO3,year,EDU,MIL,ECON,TRAD,RESV,FIN,INV,CMPT,INDEX,geography_index]
 - Each Country ranges between 1800 - 2024
-- It will be Trained when there are atleast 4 available metrics
-    - Further explanation of assembley in the folder's readme
-    - Each country-year includes a geography index, which scores optimism;
+- Atleast 4 available metrics
+- Each includes a geography index, which scores optimism;
         - Expected Future Growth=f(Xt​)+β⋅geography 
 # Training
 
 - If a country has < 100 years of valid data, exclude.
-    - Also exclude the validation candidate, currently denmark
-- rolling windows of length=50 (past) → forecast horizon=30 (future).
+    - exclude the validation candidate; denmark
+- rolling windows of length=50 ( gaussian)
+-  forecast horizon=30.
 - Use the last known geography_index in the input window
     - Add β·geography as an additive bias to the output head
 - Temporal ConvNet (1D Conv over time) on the K channels.
@@ -59,7 +59,8 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 - Build a boolean mask (K,50) for inputs; use masked loss.
 - Only generate loss on targets actually present in the 30y horizon.
 
-## Validation Strategy & Exclusions
+## Validation Strategy
 
 - Current candidate to exclude: denmark
-    - relatively stable, not too stable. 
+    - relatively stable, not too stable
+- walk forward, regression based evaluation

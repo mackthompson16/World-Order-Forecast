@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+from .utils import moving_average
 
 from .utils import moving_average
 
@@ -258,6 +260,97 @@ def plot_geography_index(geo: pd.DataFrame, out_dir: Path, smooth: int = 5) -> P
         ax.legend([handles[i] for i in show], [labels[i] for i in show], loc="best")
     fig.tight_layout()
     out_path = out_dir / "geography_index.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_projection_2054(
+    projections: Dict[str, "ProjectionLike"],
+    out_path: Path,
+    max_year: int = 2024,
+    highlight_iso: List[str] = ["USA", "CHN", "GBR"],
+    smooth: int = 5,
+) -> Path:
+    """
+    Plot composite-style actual-to-max_year and forecast-to-2054 for selected countries.
+
+    `projections` is a dict ISO3 -> object with attributes/keys:
+      years_hist (array), vals_hist (array), years_fore (array), vals_fore (array).
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # draw each country
+    y_vals_min = None
+    y_vals_max = None
+    for iso, proj in projections.items():
+        years_hist = np.asarray(getattr(proj, "years_hist"))
+        vals_hist = np.asarray(getattr(proj, "vals_hist"))
+        years_fore = np.asarray(getattr(proj, "years_fore"))
+        vals_fore = np.asarray(getattr(proj, "vals_fore"))
+
+        # Smooth historical (centered) and forecast (causal) to avoid boundary jumps
+        if len(vals_hist):
+            vals_hist_s = moving_average(pd.Series(vals_hist), smooth).values
+        else:
+            vals_hist_s = vals_hist
+        if len(vals_fore):
+            # causal smoothing for forecast to keep first point aligned
+            vf = pd.Series(vals_fore)
+            vals_fore_s = vf.rolling(window=smooth, min_periods=1, center=False).mean().values
+        else:
+            vals_fore_s = vals_fore
+        # Continuity: anchor first forecast point to last historical smoothed value
+        if len(vals_hist_s) > 0 and len(vals_fore_s) > 0:
+            delta = vals_hist_s[-1] - vals_fore_s[0]
+            vals_fore_s = vals_fore_s + delta
+
+        if iso in HIGHLIGHT:
+            style = HIGHLIGHT[iso]
+            color = style.get("color", None)
+            ax.plot(years_hist, vals_hist_s, color=color if color else None, lw=2.8, alpha=1.0, zorder=3, label=iso)
+            ax.plot(years_fore, vals_fore_s, color=color if color else None, lw=2.8, alpha=1.0, zorder=3, linestyle="--")
+        else:
+            ax.plot(years_hist, vals_hist_s, color="#777777", lw=1.0, alpha=0.35)
+            ax.plot(years_fore, vals_fore_s, color="#777777", lw=1.0, alpha=0.35, linestyle="--")
+
+        # Track y-limits dynamically across all plotted values
+        arr = np.concatenate([vals_hist_s[~np.isnan(vals_hist_s)], vals_fore_s[~np.isnan(vals_fore_s)]]) if len(vals_hist_s) or len(vals_fore_s) else np.array([])
+        if arr.size:
+            ymin_c = float(np.nanmin(arr))
+            ymax_c = float(np.nanmax(arr))
+            y_vals_min = ymin_c if y_vals_min is None else min(y_vals_min, ymin_c)
+            y_vals_max = ymax_c if y_vals_max is None else max(y_vals_max, ymax_c)
+
+    # vertical line at max_year
+    ax.axvline(max_year, color="k", lw=1.0, linestyle=":")
+    ax.set_xlim(1800, max_year + 30)
+    # Set y-limits based on actual plotted data with a small padding
+    if y_vals_min is not None and y_vals_max is not None and y_vals_max > y_vals_min:
+        pad = 0.05 * (y_vals_max - y_vals_min)
+        ax.set_ylim(y_vals_min - pad, y_vals_max + pad)
+    ax.set_title("World Order Index: Actual to 2024, Forecast to 2054")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Composite (0-1)")
+    # Only one legend entry per country (no separate dashed entries)
+    handles, labels = ax.get_legend_handles_labels()
+    # Keep only highlight countries and in requested order
+    want = [iso for iso in highlight_iso if iso in labels]
+    if want:
+        new_handles = []
+        new_labels = []
+        for iso in want:
+            for h, l in zip(handles, labels):
+                if l == iso:
+                    new_handles.append(h)
+                    new_labels.append(l)
+                    break
+        ax.legend(new_handles, new_labels, loc="best")
+
+    fig.tight_layout()
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
     return out_path
