@@ -11,6 +11,7 @@
 * [Validation](#validation)
 
 ## Results
+### A country's composite score is the weighted average of Ray Dalio's 8 metrics for empire strength (implementation details below)
 ![Empire Composite Standing - Projected 30 years](src/results/projection_2054.png)
 ## Conclusion
 
