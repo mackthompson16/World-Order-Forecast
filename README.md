@@ -19,20 +19,37 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 ![Metric Distrubution grid](src/results/metrics_grid.png)
 ![Metric Distrubution grid](src/results/geography_index.png)
 - Further explanation of assembley in the folder's readme
-- Need to get more financial / Currency data (mostly privatized)
-## Training Data
+- Notice lack of financial / Currency data (mostly privatized)
 
-- Located in src/results/metrics.csv
-    -   [country_name,ISO3,year,EDU,MIL,ECON,TRAD,RESV,FIN,INV,CMPT,INDEX,geography_index]
-- Each Country ranges between 1800 - 2024
-- Atleast 4 available metrics
-- Each includes a geography index, which scores optimism;
-        - Expected Future Growth=f(Xt​)+β⋅geography 
+# Data Source (excluded from github)
+| **Public Source**                                                                                            | **Purpose**                                                            | **Key Columns Used**                                                                         |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [**Global Macro Database (GMD)**](https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/README.md) | Core macroeconomic data including GDP, trade, and monetary aggregates. | `rGDP_USD`, `USDfx`, `cGovDebtGDP`, `exports_USD`, `imports_USD`, `M0`, `finv_GDP`, `CA_USD` |
+| **Education Data (World Bank / Barro-Lee)**                                                                  | Measures average years of schooling as a proxy for human capital.      | `Years_School`, `CCODE`, `Year`                                                              |
+| **Military Spending (SIPRI / World Bank)**                                                                   | Captures national defense expenditure as share of GDP or total output. | `Military_Spending`, `CCODE`, `Year`                                                         |
+| **Polity IV Dataset (Center for Systemic Peace)**                                                            | Provides indicators of governance quality and political structure.     | `xconst`, `parcomp`, `CCODE`, `Year`                                                         |
+| [**Comin & Hobijn CHAT Dataset**](https://dcomin.host.dartmouth.edu/indexdatasets.php)                       | Tracks technological adoption across 1800–2000 by sector and country.  | Various technology diffusion variables (`telephones`, `electricity`, `internet`, etc.)       |
+| **Geography & Land Use (World Bank / FAO)**                                                                  | Provides area-based indicators for agriculture, forest, and land mass. | `Ag_land`, `Forest_Area`, `Land_Area`, `Country_Code`, `Year`                                |
+
+# Metrics Calculation
+
+| **Metric**                  | **Formula**                                                                                 | **Data Sources Used** | **Notes / Normalization**                             |
+| --------------------------- | ------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------- |
+| **Education (EDU)**         | `norm(education)`                                                                           | `Education.csv`       | Normalized education index per year                   |
+| **Military (MIL)**          | `norm(CINC)`                                                                                | `military.csv`        | Composite Index of National Capability                |
+| **Economic Output (ECON)**  | `norm(rGDP_USD)`                                                                            | `GMD.csv`             | GDP normalized by year across all countries           |
+| **Trade Share (TRAD)**      | `avg(norm(exports_USD), norm(imports_USD))`                                                 | `GMD.csv`             | Measures global trade integration                     |
+| **Reserve Currency (RESV)** | `norm(CA_USD)`                                                                              | `GMD.csv`             | Proxy for currency dominance and account balance      |
+| **Financial Center (FIN)**  | `0.5*norm(M0) + 0.3*norm(finv_GDP) + 0.2*(1 − norm(cGovDebtGDP))`                           | `GMD.csv`             | Combines money supply, investment, and debt stability |
+| **Innovation (INV)**        | `avg([norm(col) for col in CHAT.csv])`                                                      | `CHAT.csv`            | Mean of normalized AI/tech indicators                 |
+| **Competitiveness (CMPT)**  | `avg(norm(xconst), norm(parcomp))`                                                          | `polity.csv`          | Reflects governance strength and political stability  |
+| **Geography (GEOGRAPHY)**   | `avg(norm(Ag_land/Land_area), norm(Forest_area/Land_area), …)`                              | `/geography_data/`    | Backfilled to 1800–2024, linearly interpolated        |
+| **Composite Index (INDEX)** | `0.15*EDU + 0.15*CMPT + 0.15*INV + 0.15*ECON + 0.10*TRAD + 0.10*MIL + 0.10*FIN + 0.10*RESV` | All of the above      | Weights renormalized when data missing                |
+
+
 # Training
 
-- If a country has < 100 years of valid data, exclude.
-    - exclude the validation candidate; denmark
-- rolling windows of length=50 ( gaussian)
+- Rolling windows of length=50 ( gaussian)
 -  forecast horizon=30.
 - Use the last known geography_index in the input window
     - Add β·geography as an additive bias to the output head
@@ -41,8 +58,7 @@ His team assembled data that dates back nearly 1000 years from hundred of cross 
 - Build a boolean mask (K,50) for inputs; use masked loss.
 - Only generate loss on targets actually present in the 30y horizon.
 
-## Validation Strategy
+## Validation
 ![Empire Composite Standing - Projected 30 years](src/results/trajectory_dnk_index_spaghetti.png)
-- Current candidate to exclude: denmark
-- walk forward, regression based evaluation
+- Walk forward, regression based evaluation
 - Percent of deltas with correct sign at each year gives the final accuracy
