@@ -1,5 +1,14 @@
 # Can I use Deep Learning to model political trends?
 
+## Contents
+* [Results](#results)
+* [Conclusion](#conclusion)
+* [Background](#background)
+* [Data Coverage](#data-coverage)
+* [Data Source (excluded from github)](#data-source-excluded-from-github)
+* [Metrics Calculation](#metrics-calculation)
+* [Training](#training)
+* [Validation](#validation)
 
 ## Results
 ![Empire Composite Standing - Projected 30 years](src/results/projection_2054.png)
