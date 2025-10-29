@@ -6,14 +6,6 @@
 ![Empire Composite Standing - Projected 30 years](src/results/projection_2054.png)
 This repository explores whether nations and corporations follow similar rise-and-fall dynamics, and whether machine learning can project these trajectories into the future. By combining public socio-economic datasets with deep learning architectures, the project attempts to generate ten-year forecasts of both empires (countries) and companies (industries).
 
-At the core is a simple but provocative research question:
-### Are Empires and Companies one in the same?
-
-To test this, I divide the data into two domains:
-
-- Empires (Countries): measured across eight structural dimensions such as debt, military strength, education, innovation, and reserve currency status.
-- Companies (Industries): measured across parallel dimensions such as market capitalization, R&D spending, revenue growth, employment share, and global market share.
-
 ## Background
 
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
