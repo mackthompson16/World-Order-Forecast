@@ -1,10 +1,15 @@
-# Deep Learning to predict the future
+# Can I use Deep Learning to model political trends?
 
-## Status: Empire Forecast model is (almost) 60% accuracy
- - Will move on to markets once I get to 70%
-# Current forecast
+
+## Results
 ![Empire Composite Standing - Projected 30 years](src/results/projection_2054.png)
 This repository explores whether nations and corporations follow similar rise-and-fall dynamics, and whether machine learning can project these trajectories into the future. By combining public socio-economic datasets with deep learning architectures, the project attempts to generate ten-year forecasts of both empires (countries) and companies (industries).
+
+## Conclusion
+
+While it is conceptually possible to apply deep learning to forecast world orders, the scope of data required to capture the cyclical nature of global politics exceeds the resources available for this independent study. Meaningful temporal windows would need to span approximately 250 years per empire, yet most countries only provide about 150 years of reliable data. The model’s 60% accuracy suggests that some predictive signal exists, but overall performance represents only a modest 10% improvement over random chance and aligns closely with results produced by a 50-year windowed linear regression approach. More traditional frameworks, such as statistical arbitrage, may therefore prove more suitable for this kind of analysis.
+
+Nevertheless, as I continue my research, I hypothesize that the greater availability of data within the American stock market—and the shorter life cycles of individual companies—will allow for more precise modeling of economic trajectories on a monthly scale. This insight motivates the next phase of my work: developing a data-driven trading tool capable of forecasting corporate performance trends with higher temporal accuracy.
 
 ## Background
 
