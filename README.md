@@ -30,6 +30,7 @@ I sought to reproduce his team's graphs through the same kind of metric weightin
 ![Metric Distrubution grid](src/results/geography_index.png)
 - Further explanation of assembley in the folder's readme
 - Notice lack of financial / Currency data (mostly privatized)
+- Geography is not use for the rating; only for training optimism
 
 # Data Source (excluded from github)
 | **Public Source**                                                                                            | **Purpose**                                                            | **Key Columns Used**                                                                         |
