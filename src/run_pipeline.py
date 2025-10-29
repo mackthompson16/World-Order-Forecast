@@ -22,7 +22,7 @@ def run(data_dir: Path | None = None, out_dir: Path | None = None, smooth: int =
 
     # Metrics
     metrics_path = out_dir / "metrics.csv"
-    metrics_path = write_metrics(clean_path, chat_path, metrics_path)
+    metrics_path = write_metrics(clean_path, chat_path, metrics_path, smooth_window=smooth)
 
     # Plots (use INDEX from metrics.csv for composite)
     import pandas as pd

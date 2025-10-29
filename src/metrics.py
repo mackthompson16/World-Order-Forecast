@@ -1,431 +1,210 @@
-"""
-Evaluation metrics for country standing forecasting.
-
-Implements MAE, RMSE, MASE, Spearman correlation, and interval coverage
-metrics for evaluating forecast performance.
-"""
-
+from pathlib import Path
+import pandas as pd
 import numpy as np
-import torch
-import torch.nn as nn
-from typing import Dict, List, Optional, Tuple, Union
-from scipy.stats import spearmanr
-import logging
+from typing import Tuple, List, Dict, Any
+import json
 
-logger = logging.getLogger(__name__)
+from .utils import yearwise_min_max_norm, forward_fill_limited, interpolate_panel, moving_average
+from .composite import compute_composite
 
 
-def mean_absolute_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate Mean Absolute Error (MAE).
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        
-    Returns:
-        MAE value
-    """
-    return np.mean(np.abs(y_true - y_pred))
+METRIC_COLS = ["EDU", "MIL", "ECON", "TRAD", "RESV", "FIN", "INV", "CMPT"]
 
 
-def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate Root Mean Squared Error (RMSE).
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        
-    Returns:
-        RMSE value
-    """
-    return np.sqrt(np.mean((y_true - y_pred) ** 2))
+# Alias matching requested helper name
+per_year_minmax = yearwise_min_max_norm
 
 
-def mean_absolute_scaled_error(
-    y_true: np.ndarray, 
-    y_pred: np.ndarray, 
-    y_train: Optional[np.ndarray] = None,
-    seasonal_period: int = 1
-) -> float:
-    """
-    Calculate Mean Absolute Scaled Error (MASE).
-    
-    MASE = MAE / MAE_naive_forecast
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        y_train: Training data for naive forecast baseline
-        seasonal_period: Seasonal period for naive forecast
-        
-    Returns:
-        MASE value
-    """
-    mae = mean_absolute_error(y_true, y_pred)
-    
-    if y_train is not None:
-        # Use training data for naive forecast
-        naive_forecast = np.mean(np.abs(np.diff(y_train, n=seasonal_period)))
-    else:
-        # Use test data for naive forecast (less ideal)
-        naive_forecast = np.mean(np.abs(np.diff(y_true, n=seasonal_period)))
-    
-    if naive_forecast == 0:
-        logger.warning("Naive forecast error is zero, returning MAE instead of MASE")
-        return mae
-    
-    return mae / naive_forecast
+def _compute_innovation(chat: pd.DataFrame) -> pd.DataFrame:
+    df = chat.copy()
+    feature_cols: List[str] = [c for c in df.columns if c not in ("country", "year")]
+    # Coerce features to numeric to avoid string arithmetic
+    for c in feature_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # Normalize each feature per year, then sum and normalize the sum per year
+    for c in feature_cols:
+        df[c] = per_year_minmax(df[c], df["year"])  # type: ignore[arg-type]
+    df["_sum_norm"] = df[feature_cols].sum(axis=1, skipna=True)
+    df["innovation"] = per_year_minmax(df["_sum_norm"], df["year"])  # type: ignore[arg-type]
+    return df[["country", "year", "innovation"]]
 
 
-def spearman_correlation(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
-    """
-    Calculate Spearman rank correlation coefficient.
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        
-    Returns:
-        Tuple of (correlation, p_value)
-    """
-    correlation, p_value = spearmanr(y_true, y_pred)
-    return correlation, p_value
 
+def compute_metrics(clean_path: Path, chat_path: Path) -> pd.DataFrame:
+    clean = pd.read_csv(clean_path)
+    chat = pd.read_csv(chat_path)
 
-def interval_coverage(
-    y_true: np.ndarray,
-    lower_bound: np.ndarray,
-    upper_bound: np.ndarray,
-    target_coverage: float = 0.8
-) -> float:
-    """
-    Calculate interval coverage rate.
-    
-    Args:
-        y_true: True values
-        lower_bound: Lower bound of prediction interval
-        upper_bound: Upper bound of prediction interval
-        target_coverage: Target coverage rate (e.g., 0.8 for 80% interval)
-        
-    Returns:
-        Actual coverage rate
-    """
-    covered = np.logical_and(y_true >= lower_bound, y_true <= upper_bound)
-    return np.mean(covered)
+    # Prepare base index
+    base = clean[["ISO3", "country_name", "year"]].dropna(subset=["ISO3", "year"]).drop_duplicates().copy()
 
+    def _unique_mean(df: pd.DataFrame, key_cols: List[str], val_col: str) -> pd.DataFrame:
+        out = (
+            df[key_cols + [val_col]]
+            .groupby(key_cols, as_index=False)[val_col]
+            .mean()
+        )
+        return out
 
-def pinball_loss(
-    y_true: torch.Tensor,
-    y_pred: torch.Tensor,
-    quantile: float
-) -> torch.Tensor:
-    """
-    Calculate pinball loss for quantile regression.
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        quantile: Target quantile (e.g., 0.5 for median)
-        
-    Returns:
-        Pinball loss
-    """
-    error = y_true - y_pred
-    return torch.mean(torch.max(
-        (quantile - 1) * error,
-        quantile * error
-    ))
+    # Normalized simple metrics
+    def add_norm_metric(src: pd.DataFrame, value_col: str, out_col: str) -> pd.DataFrame:
+        df = src[["ISO3", "year", value_col]].copy()
+        df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
+        df = _unique_mean(df, ["ISO3", "year"], value_col)
+        df[out_col] = yearwise_min_max_norm(df[value_col], df["year"])
+        return df[["ISO3", "year", out_col]]
 
+    parts = []
+    if "education" in clean.columns:
+        parts.append(add_norm_metric(clean, "education", "EDU"))
+    if "CINC" in clean.columns:
+        parts.append(add_norm_metric(clean, "CINC", "MIL"))
+    if "rGDP_USD" in clean.columns:
+        parts.append(add_norm_metric(clean, "rGDP_USD", "ECON"))
 
-def quantile_loss(
-    y_true: torch.Tensor,
-    y_pred: torch.Tensor,
-    quantiles: List[float]
-) -> torch.Tensor:
-    """
-    Calculate quantile loss for multiple quantiles.
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted quantiles
-        quantiles: List of target quantiles
-        
-    Returns:
-        Total quantile loss
-    """
-    total_loss = 0.0
-    n_quantiles = len(quantiles)
-    
-    for i, q in enumerate(quantiles):
-        loss = pinball_loss(y_true, y_pred[:, i], q)
-        total_loss += loss
-    
-    return total_loss / n_quantiles
+    # Trade: average of normalized exports and imports
+    trade_components = []
+    if "exports_USD" in clean.columns:
+        trade_components.append(add_norm_metric(clean, "exports_USD", "_NEXP"))
+    if "imports_USD" in clean.columns:
+        trade_components.append(add_norm_metric(clean, "imports_USD", "_NIMP"))
+    if trade_components:
+        tdf = base[["ISO3", "year"]].drop_duplicates().copy()
+        for t in trade_components:
+            tdf = tdf.merge(t, on=["ISO3", "year"], how="left")
+        tcols = [c for c in tdf.columns if c.startswith("_N")]
+        tdf["TRAD"] = tdf[tcols].mean(axis=1)
+        parts.append(tdf[["ISO3", "year", "TRAD"]])
 
+    # Reserve currency: CA_USD
+    if "CA_USD" in clean.columns:
+        parts.append(add_norm_metric(clean, "CA_USD", "RESV"))
 
-class ForecastMetrics:
-    """
-    Comprehensive metrics calculator for forecasting evaluation.
-    """
-    
-    def __init__(
-        self,
-        horizons: List[int] = [1, 5, 10],
-        quantiles: Optional[List[float]] = None,
-        target_coverage: float = 0.8
-    ):
-        """
-        Initialize ForecastMetrics.
-        
-        Args:
-            horizons: List of forecast horizons
-            quantiles: List of quantiles for uncertainty estimation
-            target_coverage: Target coverage rate for intervals
-        """
-        self.horizons = horizons
-        self.quantiles = quantiles or [0.1, 0.5, 0.9]
-        self.target_coverage = target_coverage
-    
-    def calculate_metrics(
-        self,
-        y_true: Dict[str, np.ndarray],
-        y_pred: Dict[str, np.ndarray],
-        y_train: Optional[Dict[str, np.ndarray]] = None
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Calculate comprehensive metrics for all horizons.
-        
-        Args:
-            y_true: Dictionary mapping horizon to true values
-            y_pred: Dictionary mapping horizon to predicted values
-            y_train: Optional training data for MASE calculation
-            
-        Returns:
-            Dictionary of metrics for each horizon
-        """
-        metrics = {}
-        
-        for horizon in self.horizons:
-            horizon_key = f"standing_{horizon}y"
-            
-            if horizon_key not in y_true or horizon_key not in y_pred:
-                logger.warning(f"Missing data for horizon {horizon}")
+    # Financial center: 0.5*norm(M0)+0.3*norm(finv_GDP)+0.2*(1-norm(cgovdebt_GDP))
+    fin_parts = []
+    if "M0" in clean.columns:
+        fin_parts.append(add_norm_metric(clean, "M0", "_NM0"))
+    if "finv_GDP" in clean.columns:
+        fin_parts.append(add_norm_metric(clean, "finv_GDP", "_NFINV"))
+    if "cgovdebt_GDP" in clean.columns:
+        fin_parts.append(add_norm_metric(clean, "cgovdebt_GDP", "_NDEBT"))
+    if fin_parts:
+        fdf = base[["ISO3", "year"]].drop_duplicates().copy()
+        for f in fin_parts:
+            fdf = fdf.merge(f, on=["ISO3", "year"], how="left")
+        fdf["FIN"] = 0.5 * fdf.get("_NM0") + 0.3 * fdf.get("_NFINV") + 0.2 * (1 - fdf.get("_NDEBT"))
+        parts.append(fdf[["ISO3", "year", "FIN"]])
+
+    # Innovation (Technology) - simplified per request
+    if not chat.empty:
+        chat_use = chat.copy()
+        chat_use = chat_use.rename(columns={"ISO3": "country"})
+        inv_df = _compute_innovation(chat_use)
+        inv_df = inv_df.rename(columns={"country": "ISO3", "innovation": "INV"})
+        parts.append(inv_df[["ISO3", "year", "INV"]])
+
+    # Competitiveness: average of normalized xconst and parcomp
+    comp_parts = []
+    if "xconst" in clean.columns:
+        comp_parts.append(add_norm_metric(clean, "xconst", "_NXCONST"))
+    if "parcomp" in clean.columns:
+        comp_parts.append(add_norm_metric(clean, "parcomp", "_NPARCOMP"))
+    if comp_parts:
+        cdf = base[["ISO3", "year"]].drop_duplicates().copy()
+        for c in comp_parts:
+            cdf = cdf.merge(c, on=["ISO3", "year"], how="left")
+        cdf["CMPT"] = cdf[[col for col in cdf.columns if col.startswith("_N")]].mean(axis=1)
+        parts.append(cdf[["ISO3", "year", "CMPT"]])
+
+    # Merge all parts
+    metrics = base.drop_duplicates(["ISO3", "year"]).copy()
+    for p in parts:
+        # ensure part uniqueness
+        p = p.drop_duplicates(["ISO3", "year"]).copy()
+        metrics = metrics.merge(p, on=["ISO3", "year"], how="left")
+
+    # Drop rows where no metric is available (sparsity)
+    if not metrics.empty:
+        has_any = metrics[METRIC_COLS].notna().any(axis=1)
+        metrics = metrics.loc[has_any].copy()
+
+    # Forward-fill tail to 2024, at most 10y, without adding empty early years
+    if not metrics.empty:
+        # Create tail rows per country up to min(last+10, 2024)
+        tails = []
+        for iso3, g in metrics.groupby("ISO3"):
+            g = g.sort_values("year")
+            # last year with any metric value
+            g_has = g[METRIC_COLS].notna().any(axis=1)
+            if not g_has.any():
                 continue
-            
-            true_vals = y_true[horizon_key]
-            pred_vals = y_pred[horizon_key]
-            
-            # Remove NaN values
-            valid_mask = ~(np.isnan(true_vals) | np.isnan(pred_vals))
-            true_vals = true_vals[valid_mask]
-            pred_vals = pred_vals[valid_mask]
-            
-            if len(true_vals) == 0:
-                logger.warning(f"No valid data for horizon {horizon}")
-                continue
-            
-            # Calculate basic metrics
-            horizon_metrics = {
-                "mae": mean_absolute_error(true_vals, pred_vals),
-                "rmse": root_mean_squared_error(true_vals, pred_vals),
-                "spearman_corr": spearman_correlation(true_vals, pred_vals)[0],
-                "spearman_pvalue": spearman_correlation(true_vals, pred_vals)[1]
-            }
-            
-            # Calculate MASE if training data available
-            if y_train is not None and horizon_key in y_train:
-                train_vals = y_train[horizon_key]
-                train_vals = train_vals[~np.isnan(train_vals)]
-                if len(train_vals) > 0:
-                    horizon_metrics["mase"] = mean_absolute_scaled_error(
-                        true_vals, pred_vals, train_vals
-                    )
-            
-            # Calculate quantile metrics if available
-            quantile_key = f"quantiles_{horizon}y"
-            if quantile_key in y_pred:
-                quantile_preds = y_pred[quantile_key]
-                
-                # Interval coverage
-                if len(self.quantiles) >= 2:
-                    lower_idx = 0
-                    upper_idx = len(self.quantiles) - 1
-                    
-                    coverage = interval_coverage(
-                        true_vals,
-                        quantile_preds[:, lower_idx],
-                        quantile_preds[:, upper_idx],
-                        self.target_coverage
-                    )
-                    horizon_metrics["interval_coverage"] = coverage
-                
-                # Individual quantile performance
-                for i, q in enumerate(self.quantiles):
-                    if i < quantile_preds.shape[1]:
-                        quantile_pred = quantile_preds[:, i]
-                        quantile_pred = quantile_pred[valid_mask]
-                        
-                        horizon_metrics[f"quantile_{q}_mae"] = mean_absolute_error(
-                            true_vals, quantile_pred
-                        )
-            
-            metrics[f"horizon_{horizon}y"] = horizon_metrics
-        
-        return metrics
-    
-    def calculate_country_metrics(
-        self,
-        country_results: Dict[str, Dict[str, np.ndarray]]
-    ) -> Dict[str, Dict[str, Dict[str, float]]]:
-        """
-        Calculate metrics for each country separately.
-        
-        Args:
-            country_results: Dictionary mapping country to results
-            
-        Returns:
-            Dictionary mapping country to metrics
-        """
-        country_metrics = {}
-        
-        for country, results in country_results.items():
-            country_metrics[country] = self.calculate_metrics(results)
-        
-        return country_metrics
-    
-    def aggregate_metrics(
-        self,
-        country_metrics: Dict[str, Dict[str, Dict[str, float]]]
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Aggregate metrics across countries.
-        
-        Args:
-            country_metrics: Dictionary mapping country to metrics
-            
-        Returns:
-            Aggregated metrics
-        """
-        aggregated = {}
-        
-        for horizon in self.horizons:
-            horizon_key = f"horizon_{horizon}y"
-            
-            # Collect metrics for this horizon across all countries
-            horizon_metrics = {}
-            for country, metrics in country_metrics.items():
-                if horizon_key in metrics:
-                    for metric_name, metric_value in metrics[horizon_key].items():
-                        if metric_name not in horizon_metrics:
-                            horizon_metrics[metric_name] = []
-                        horizon_metrics[metric_name].append(metric_value)
-            
-            # Calculate aggregated statistics
-            aggregated[horizon_key] = {}
-            for metric_name, values in horizon_metrics.items():
-                if values:
-                    aggregated[horizon_key][f"{metric_name}_mean"] = np.mean(values)
-                    aggregated[horizon_key][f"{metric_name}_std"] = np.std(values)
-                    aggregated[horizon_key][f"{metric_name}_median"] = np.median(values)
-                    aggregated[horizon_key][f"{metric_name}_min"] = np.min(values)
-                    aggregated[horizon_key][f"{metric_name}_max"] = np.max(values)
-        
-        return aggregated
-    
-    def print_metrics_summary(
-        self,
-        metrics: Dict[str, Dict[str, float]],
-        title: str = "Forecast Metrics"
-    ):
-        """
-        Print formatted metrics summary.
-        
-        Args:
-            metrics: Dictionary of metrics
-            title: Title for the summary
-        """
-        print(f"\n{title}")
-        print("=" * len(title))
-        
-        for horizon_key, horizon_metrics in metrics.items():
-            print(f"\n{horizon_key.upper()}:")
-            print("-" * len(horizon_key))
-            
-            for metric_name, metric_value in horizon_metrics.items():
-                if isinstance(metric_value, float):
-                    print(f"  {metric_name}: {metric_value:.4f}")
-                else:
-                    print(f"  {metric_name}: {metric_value}")
+            last_year = int(g.loc[g_has, "year"].max())
+            limit = min(2024, last_year + 10)
+            add_years = [y for y in range(last_year + 1, limit + 1)]
+            if add_years:
+                cname = g["country_name"].dropna().iloc[0] if g["country_name"].notna().any() else None
+                tails.append(pd.DataFrame({"ISO3": iso3, "country_name": cname, "year": add_years}))
+        if tails:
+            tail_df = pd.concat(tails, ignore_index=True)
+            metrics = pd.concat([metrics, tail_df], ignore_index=True)
+        metrics = metrics.drop_duplicates(["ISO3", "year"]).sort_values(["ISO3", "year"]).reset_index(drop=True)
+        metrics = forward_fill_limited(metrics, ["ISO3"], METRIC_COLS, max_years=10, year_col="year")
+
+    # Linear interpolate inside gaps for all metric columns (and INDEX later)
+    if not metrics.empty:
+        interp_cols = [c for c in METRIC_COLS if c in metrics.columns]
+        metrics = interpolate_panel(metrics, ["ISO3"], interp_cols)
+
+    return metrics
 
 
-def calculate_directional_accuracy(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    y_prev: Optional[np.ndarray] = None
-) -> float:
-    """
-    Calculate directional accuracy (percentage of correct direction predictions).
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        y_prev: Previous values for calculating direction
-        
-    Returns:
-        Directional accuracy percentage
-    """
-    if y_prev is None:
-        # Use first-order differences
-        true_direction = np.diff(y_true) > 0
-        pred_direction = np.diff(y_pred) > 0
-    else:
-        # Use direction relative to previous values
-        true_direction = (y_true - y_prev) > 0
-        pred_direction = (y_pred - y_prev) > 0
-    
-    # Calculate accuracy
-    correct = np.sum(true_direction == pred_direction)
-    total = len(true_direction)
-    
-    return correct / total if total > 0 else 0.0
+def _smooth_components(df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
+    if df.empty:
+        return df
+    present = [c for c in METRIC_COLS if c in df.columns]
+    groups = []
+    for iso3, g in df.groupby("ISO3"):
+        g = g.sort_values("year").copy()
+        for col in present:
+            g[col] = moving_average(g[col], window)
+        if "INDEX" in g.columns:
+            g["INDEX"] = moving_average(g["INDEX"], window)
+        groups.append(g)
+    return pd.concat(groups, ignore_index=True).sort_values(["ISO3", "year"]) if groups else df
 
 
-def calculate_forecast_bias(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate forecast bias (mean error).
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        
-    Returns:
-        Forecast bias
-    """
-    return np.mean(y_pred - y_true)
+def write_metrics(clean_path: Path, chat_path: Path, out_path: Path, smooth_window: int = 5) -> Path:
+    metrics = compute_metrics(clean_path, chat_path)
+    # Add composite index into the metrics as INDEX
+    comp = compute_composite(metrics)
+    if "WorldOrderIndex" in comp.columns:
+        metrics = metrics.merge(
+            comp[["ISO3", "year", "WorldOrderIndex"]],
+            on=["ISO3", "year"],
+            how="left",
+        )
+        metrics = metrics.rename(columns={"WorldOrderIndex": "INDEX"})
+        # Interpolate INDEX inside gaps too (after adding it)
+        metrics = interpolate_panel(metrics, ["ISO3"], ["INDEX"]) if "INDEX" in metrics.columns else metrics
 
+    # Smooth calculated metrics and INDEX so metrics.csv is always smoothed
+    metrics = _smooth_components(metrics, window=smooth_window)
 
-def calculate_forecast_efficiency(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    y_naive: np.ndarray
-) -> float:
-    """
-    Calculate forecast efficiency relative to naive forecast.
-    
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        y_naive: Naive forecast values
-        
-    Returns:
-        Forecast efficiency (1 - MSE_model / MSE_naive)
-    """
-    mse_model = np.mean((y_true - y_pred) ** 2)
-    mse_naive = np.mean((y_true - y_naive) ** 2)
-    
-    if mse_naive == 0:
-        return 0.0
-    
-    return 1 - (mse_model / mse_naive)
+    # Merge geography index if available (do not change row coverage)
+    try:
+        geo_path = Path(clean_path).parent / "clean_geography.csv"
+        if geo_path.exists():
+            geo = pd.read_csv(geo_path)
+            # Expect columns: Country, abv, year, ..., index
+            if set(["abv", "year"]).issubset(geo.columns) and "index" in geo.columns:
+                geo_use = geo[["abv", "year", "index"]].rename(columns={"abv": "ISO3", "index": "geography_index"})
+                metrics = metrics.merge(geo_use, on=["ISO3", "year"], how="left")
+    except Exception:
+        # Non-fatal if geography data missing or malformed
+        pass
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Order columns
+    cols = ["country_name", "ISO3", "year"] + METRIC_COLS + ["INDEX", "geography_index"]
+    cols = [c for c in cols if c in metrics.columns]
+    metrics[cols].to_csv(out_path, index=False)
+    return out_path

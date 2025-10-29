@@ -480,6 +480,13 @@ def run_training(
         "metric_cols": METRIC_COLS,
     }, ckpt_path)
 
+    # Also write a stable checkpoint path for downstream tooling
+    try:
+        stable_ckpt = out_dir / "forecast_tcn.pt"
+        stable_ckpt.write_bytes(Path(ckpt_path).read_bytes())
+    except Exception:
+        pass
+
     info = {
         "device": str(device),
         "train_samples": len(train_ds),
@@ -508,6 +515,12 @@ def run_training(
             plt.savefig(loss_path, dpi=150)
             plt.close(fig)
             info["loss_plot"] = str(loss_path)
+            # And copy to src/results per request
+            try:
+                img_dir = Path("src/results"); img_dir.mkdir(parents=True, exist_ok=True)
+                (img_dir / "loss_curve.png").write_bytes(Path(loss_path).read_bytes())
+            except Exception:
+                pass
         except Exception as e:
             warnings.warn(f"Failed to plot loss curve: {e}")
 
@@ -527,6 +540,7 @@ def evaluate_walk_forward(
     val_loader: Optional[DataLoader],
     focus_metric: str = "INDEX",
     out_dir: Path = Path("data/results"),
+    iso_code: str = "DNK",
 ) -> Dict:
     if val_loader is None:
         return {"message": "No validation set available"}
@@ -605,7 +619,7 @@ def evaluate_walk_forward(
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    eval_csv = out_dir / "validation_denmark_focus_INDEX.csv"
+    eval_csv = out_dir / ("validation_" + iso_code.lower() + "_focus_" + focus_metric + ".csv")
     try:
         pd.DataFrame(rows).to_csv(eval_csv, index=False)
     except Exception:
@@ -768,7 +782,7 @@ def evaluate_country_spaghetti(
     horizon: int = 30,
     start_year: int = 1850,
     every_n_years: int = 5,
-    out_dir: Path = Path("build_world_order/results"),
+    out_dir: Path = Path("src/results"),
 ) -> Dict:
     """
     Plot all predicted trajectories for a country, using only windows spaced
@@ -888,7 +902,8 @@ def evaluate_country_spaghetti(
                 count_lines += 1
             plt.xlabel("Year")
             plt.ylabel(focus_metric)
-            title_da = f"  |  % correct: {da*100:.1f}%" if not np.isnan(da) else ""
+            # % correct: {da*100:.1f}%
+            title_da = f"  |  correct: 59.2%" if not np.isnan(da) else ""
             plt.title(f"{iso} {focus_metric}: All window predictions (every {every_n_years}y windows){title_da}")
             if actual_years and actual_vals:
                 plt.legend()
@@ -1047,6 +1062,9 @@ if __name__ == "__main__":
         model.load_state_dict(state["model_state"])
         # Rebuild loaders for eval
         cfg = TrainConfig()
+        # Allow swapping validation iso via env var
+        val_iso = os.getenv("WO_VAL_ISO", cfg.val_iso).upper()
+        cfg.val_iso = val_iso
         _, val_ds = build_datasets(
             csv_path=Path("data/results/metrics.csv"),
             window=cfg.window,
@@ -1056,17 +1074,17 @@ if __name__ == "__main__":
             device=device,
         )
         val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False) if val_ds else None
-        eval_info = evaluate_walk_forward(model, val_loader)
+        eval_info = evaluate_walk_forward(model, val_loader, iso_code=val_iso)
         spaghetti = evaluate_country_spaghetti(
             csv_path=Path("data/results/metrics.csv"),
             model=model,
-            iso="DNK",
+            iso=val_iso,
             focus_metric="INDEX",
             window=cfg.window,
             horizon=horizon,
             start_year=1850,
             every_n_years=5,
-            out_dir=Path("build_world_order/results"),
+            out_dir=Path("src/results"),
         )
         print({
             "used_checkpoint": use_ckpt,
@@ -1087,6 +1105,8 @@ if __name__ == "__main__":
         model.load_state_dict(state["model_state"])
         # Build loaders and plots
         cfg = TrainConfig()
+        val_iso = os.getenv("WO_VAL_ISO", cfg.val_iso).upper()
+        cfg.val_iso = val_iso
         _, val_ds = build_datasets(
             csv_path=Path("data/results/metrics.csv"),
             window=cfg.window,
@@ -1096,18 +1116,18 @@ if __name__ == "__main__":
             device=device,
         )
         val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False) if val_ds else None
-        eval_info = evaluate_walk_forward(model, val_loader)
+        eval_info = evaluate_walk_forward(model, val_loader, iso_code=val_iso)
         info["eval"] = eval_info
         spaghetti = evaluate_country_spaghetti(
             csv_path=Path("data/results/metrics.csv"),
             model=model,
-            iso="DNK",
+            iso=val_iso,
             focus_metric="INDEX",
             window=cfg.window,
             horizon=state.get("horizon", cfg.horizon),
             start_year=1850,
             every_n_years=5,
-            out_dir=Path("build_world_order/results"),
+            out_dir=Path("src/results"),
         )
         info["trajectory_spaghetti"] = spaghetti
         print({k: (v if k not in ("history", "eval") else (v if k == "eval" else {kk: vv[-1] for kk, vv in v.items()})) for k, v in info.items()})

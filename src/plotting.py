@@ -52,7 +52,7 @@ def plot_composite(
 
     for iso3, g in comp.groupby("ISO3"):
         s = g.sort_values("year")["WorldOrderIndex"].reset_index(drop=True)
-        y = moving_average(s, smooth)
+        y = s  # data is already smoothed upstream
         x = g.sort_values("year")["year"].values
 
         # Require at least 4 component metrics present originally to start the line
@@ -131,7 +131,7 @@ def plot_metrics_grid(metrics: pd.DataFrame, out_dir: Path, smooth: int = 5, top
             if iso3 not in top_set:
                 continue
             s = g.sort_values("year")[col].reset_index(drop=True)
-            y = moving_average(s, smooth)
+            y = s  # data is already smoothed upstream
             x = g.sort_values("year")["year"].values
             style = {"color": "#777777", "lw": 1.0, "alpha": 0.7}
             if iso3 in HIGHLIGHT:
@@ -193,7 +193,7 @@ def plot_top25_country_grids(metrics: pd.DataFrame, out_dir: Path, smooth: int =
             ax = axes[i]
             _shade_wars(ax)
             s = g[col].reset_index(drop=True)
-            y = moving_average(s, smooth)
+            y = s  # data is already smoothed upstream
             x = g["year"].values
             style = {"color": HIGHLIGHT.get(iso3, {}).get("color", "#1f77b4"), "lw": 2.0, "alpha": 0.9}
             ax.plot(x, y, **style)
@@ -240,7 +240,7 @@ def plot_geography_index(geo: pd.DataFrame, out_dir: Path, smooth: int = 5) -> P
     for iso3, g in df.groupby("ISO3"):
         g = g.sort_values("year")
         s = g["GeoIndex"].reset_index(drop=True)
-        y = moving_average(s, smooth)
+        y = s  # data is already smoothed upstream if desired
         x = g["year"].values
         style = {"color": "#888888", "lw": 1.2, "alpha": 0.6}
         if iso3 in HIGHLIGHT:
