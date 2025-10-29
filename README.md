@@ -22,7 +22,7 @@ Nevertheless, as I continue my research, I hypothesize that the greater availabi
 
 I was first introduced to this idea reading Ray Dalio's compelling piece, [Principles for dealing with the changing world order](https://www.economicprinciples.org/DalioChangingWorldOrderCharts.pdf). 
 
-His team assembled data that dates back nearly 1000 years from hundred of cross referenced sources. My first instinct was to reproduce his graphs, but much of his data was privatized and internal. Therefore, the primary limitation with my project-as with any deep learning pursuit-is data. I could only pull from a few publically available sources within the scope of my resources.
+I sought to reproduce his team's graphs through the same kind of metric weighting. His Data went much further back in time and was more streamlined. Unfortunately, they used privatized/internal sources and methods. 
 
 # Data coverage
 ![Metric Distrubution grid](src/results/metrics_grid.png)
